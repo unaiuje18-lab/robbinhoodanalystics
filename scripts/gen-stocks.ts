@@ -110,6 +110,7 @@ const rows = fetched
     change24hPct: quote.change24hPct,
     vol24hUsd: quote.vol24hUsd,
     image: `https://www.google.com/s2/favicons?domain=${entry.domain}&sz=128`,
+    tvSymbol: `${entry.exchange}:${entry.ticker}`,
     hue: hashStr(entry.ticker) % 360,
     hue2: (hashStr(entry.ticker + entry.domain) + 40) % 360,
   }));
@@ -133,6 +134,7 @@ out.push("  mcapUsd: number;");
 out.push("  change24hPct: number;");
 out.push("  vol24hUsd: number;");
 out.push("  image: string | null;");
+out.push("  tvSymbol: string;");
 out.push("  hue: number;");
 out.push("  hue2: number;");
 out.push("};");
@@ -142,7 +144,8 @@ for (const r of rows) {
   out.push(
     `  { ticker: ${JSON.stringify(r.ticker)}, name: ${JSON.stringify(r.name)}, ` +
       `priceUsd: ${r.priceUsd}, mcapUsd: ${r.mcapUsd}, change24hPct: ${r.change24hPct}, ` +
-      `vol24hUsd: ${r.vol24hUsd}, image: ${JSON.stringify(r.image)}, hue: ${r.hue}, hue2: ${r.hue2} },`,
+      `vol24hUsd: ${r.vol24hUsd}, image: ${JSON.stringify(r.image)}, ` +
+      `tvSymbol: ${JSON.stringify(r.tvSymbol)}, hue: ${r.hue}, hue2: ${r.hue2} },`,
   );
 }
 out.push("];");

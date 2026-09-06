@@ -1,5 +1,6 @@
 import { coinSeeds } from "@/data/coins";
 import { stockSeeds } from "@/data/stocks";
+import { tvSymbolsByTicker } from "@/data/tvSymbols";
 import { hashStr, mulberry32, type Rng } from "@/lib/random";
 
 export const HISTORY_CAP = 120;
@@ -36,6 +37,11 @@ export type LiveCoin = {
   lastDeltaPct: number;
   /** Logo URL, when the seed list provides one; components fall back to gradients. */
   image: string | null;
+  /**
+   * TradingView symbol for the real candlestick chart (stocks and major
+   * memes); null → detail pages render the simulated chart.
+   */
+  tvSymbol: string | null;
   hue: number;
   hue2: number;
 };
@@ -122,11 +128,13 @@ export function seedMarket(): MarketState {
       change24hPct: number;
       vol24hUsd: number;
       image: string | null;
+      tvSymbol?: string;
       hue: number;
       hue2: number;
     },
     kind: LiveCoin["kind"],
     earningsUsd: number,
+    tvSymbol: string | null,
   ): LiveCoin => {
     const open24hUsd = seedCoin.priceUsd / (1 + seedCoin.change24hPct / 100);
     // Walk backwards from today's price so history ends exactly at it.
@@ -151,14 +159,17 @@ export function seedMarket(): MarketState {
       history,
       lastDeltaPct: 0,
       image: seedCoin.image,
+      tvSymbol,
       hue: seedCoin.hue,
       hue2: seedCoin.hue2,
     });
   };
 
   const coins: LiveCoin[] = [
-    ...coinSeeds.map((s) => buildCoin(s, "meme", s.mcapUsd * earningsScale)),
-    ...stockSeeds.map((s) => buildCoin(s, "stock", 0)),
+    ...coinSeeds.map((s) =>
+      buildCoin(s, "meme", s.mcapUsd * earningsScale, tvSymbolsByTicker[s.ticker] ?? null),
+    ),
+    ...stockSeeds.map((s) => buildCoin(s, "stock", 0, s.tvSymbol)),
   ];
 
   // The tape only carries meme trades — stocks don't print every 2 seconds.

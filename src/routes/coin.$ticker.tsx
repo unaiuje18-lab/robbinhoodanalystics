@@ -2,8 +2,49 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { CoinAvatar } from "@/components/CoinArt";
+import { TradingViewChart } from "@/components/TradingViewChart";
 import { useMarket } from "@/hooks/useLiveMarket";
 import { formatCompactUsd, formatPct, formatUsd } from "@/lib/format";
+
+/** Live simulated price line — used when a coin has no TradingView listing. */
+function SimPriceChart({
+  data,
+  strokeColor,
+}: {
+  data: { i: number; price: number }[];
+  strokeColor: string;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+        <defs>
+          <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={strokeColor} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <YAxis domain={["auto", "auto"]} hide />
+        <Tooltip
+          formatter={(value) => [formatUsd(Number(value)), "Price"]}
+          labelFormatter={() => ""}
+          contentStyle={{
+            borderRadius: 12,
+            border: "1px solid oklch(0.929 0.013 255.508)",
+            fontSize: 12,
+          }}
+        />
+        <Area
+          type="monotone"
+          dataKey="price"
+          stroke={strokeColor}
+          strokeWidth={2}
+          fill="url(#priceFill)"
+          isAnimationActive={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
 
 export const Route = createFileRoute("/coin/$ticker")({
   head: ({ params }) => ({
@@ -98,7 +139,11 @@ function CoinDetail() {
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Stat label="Market cap" value={formatCompactUsd(coin.mcapUsd)} />
           <Stat label="24h volume" value={formatCompactUsd(coin.vol24hUsd)} />
-          <Stat label="Creator earnings" value={formatCompactUsd(coin.earningsUsd)} />
+          {coin.kind === "stock" ? (
+            <Stat label="Exchange" value={coin.tvSymbol?.split(":")[0] ?? ""} />
+          ) : (
+            <Stat label="Creator earnings" value={formatCompactUsd(coin.earningsUsd)} />
+          )}
           <Stat
             label="24h change"
             value={formatPct(coin.change24hPct)}
@@ -108,35 +153,14 @@ function CoinDetail() {
 
         <section className="rounded-2xl border border-border bg-card p-4 shadow-card">
           <h2 className="text-sm font-semibold">Price</h2>
-          <div className="mt-4 h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={strokeColor} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <YAxis domain={["auto", "auto"]} hide />
-                <Tooltip
-                  formatter={(value) => [formatUsd(Number(value)), "Price"]}
-                  labelFormatter={() => ""}
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid oklch(0.929 0.013 255.508)",
-                    fontSize: 12,
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke={strokeColor}
-                  strokeWidth={2}
-                  fill="url(#priceFill)"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="mt-4">
+            {coin.tvSymbol ? (
+              <TradingViewChart tvSymbol={coin.tvSymbol} />
+            ) : (
+              <div className="h-64">
+                <SimPriceChart data={data} strokeColor={strokeColor} />
+              </div>
+            )}
           </div>
         </section>
 
@@ -144,7 +168,9 @@ function CoinDetail() {
           <h2 className="text-sm font-semibold">Recent trades</h2>
           {trades.length === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">
-              No trades yet — the tape moves every few seconds, check back shortly.
+              {coin.kind === "stock"
+                ? "Stocks don't print on the meme trade tape."
+                : "No trades yet — the tape moves every few seconds, check back shortly."}
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-border">

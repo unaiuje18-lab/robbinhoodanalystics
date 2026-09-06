@@ -47,7 +47,9 @@ describe("seedMarket", () => {
     for (const stock of stocks) {
       expect(stock.mcapUsd).toBeGreaterThan(1e9); // S&P 100 members are all mega caps
       expect(stock.earningsUsd).toBe(0); // creator earnings are a meme-economy concept
+      expect(stock.tvSymbol).toMatch(/^(NASDAQ|NYSE):/); // real candlestick chart symbol
     }
+    expect(memes.some((c) => c.tvSymbol !== null)).toBe(true); // major memes get TV charts too
   });
 
   it("keeps the trade tape meme-only", () => {
