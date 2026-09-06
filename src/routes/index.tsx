@@ -6,7 +6,13 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { StatsSection } from "@/components/StatsSection";
 import { TickerBar } from "@/components/TickerBar";
 import { useMarket, useMarketSnapshot } from "@/hooks/useLiveMarket";
-import { filterCoins, sortCoins, type LiveCoin, type MarketTab } from "@/lib/market";
+import {
+  filterCoins,
+  sortCoins,
+  type LiveCoin,
+  type MarketKind,
+  type MarketTab,
+} from "@/lib/market";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,20 +38,23 @@ export const Route = createFileRoute("/")({
 function Index() {
   const live = useMarket();
   const { market: ranking, refresh } = useMarketSnapshot();
+  const [kind, setKind] = useState<MarketKind>("memes");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<MarketTab>("trending");
   const [recentBuys, setRecentBuys] = useState(false);
 
   // Order and filter membership come from the slow snapshot so cards hold
   // their place while you scroll; prices and tick flashes stay live.
+  const pool = ranking.coins.filter((c) =>
+    kind === "stocks" ? c.kind === "stock" : c.kind === "meme",
+  );
   const liveByTicker = new Map(live.coins.map((c) => [c.ticker, c] as const));
-  const visible = sortCoins(
-    filterCoins(ranking.coins, ranking.trades, { query, recentBuys }),
-    tab,
-  ).flatMap((c) => {
-    const liveCoin = liveByTicker.get(c.ticker);
-    return liveCoin ? [liveCoin] : [];
-  });
+  const visible = sortCoins(filterCoins(pool, ranking.trades, { query, recentBuys }), tab).flatMap(
+    (c) => {
+      const liveCoin = liveByTicker.get(c.ticker);
+      return liveCoin ? [liveCoin] : [];
+    },
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -55,6 +64,11 @@ function Index() {
         <h1 className="sr-only">Flaunch — launch, trade and earn from meme coins</h1>
         <StatsSection />
         <FilterBar
+          kind={kind}
+          onKindChange={(k) => {
+            setKind(k);
+            refresh();
+          }}
           tab={tab}
           onTabChange={setTab}
           recentBuys={recentBuys}

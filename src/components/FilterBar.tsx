@@ -1,5 +1,10 @@
 import { BarChart3, Flame, TrendingDown, TrendingUp } from "lucide-react";
-import type { MarketTab } from "@/lib/market";
+import type { MarketKind, MarketTab } from "@/lib/market";
+
+const KINDS: { value: MarketKind; label: string }[] = [
+  { value: "memes", label: "Meme coins" },
+  { value: "stocks", label: "Stocks" },
+];
 
 const TABS: { label: string; value: MarketTab; icon: typeof Flame }[] = [
   { label: "Trending", value: "trending", icon: Flame },
@@ -9,11 +14,15 @@ const TABS: { label: string; value: MarketTab; icon: typeof Flame }[] = [
 ];
 
 export function FilterBar({
+  kind,
+  onKindChange,
   tab,
   onTabChange,
   recentBuys,
   onRecentBuysChange,
 }: {
+  kind: MarketKind;
+  onKindChange: (kind: MarketKind) => void;
   tab: MarketTab;
   onTabChange: (tab: MarketTab) => void;
   recentBuys: boolean;
@@ -21,6 +30,22 @@ export function FilterBar({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <div className="flex rounded-full border border-border bg-card p-0.5">
+        {KINDS.map((k) => (
+          <button
+            key={k.value}
+            aria-pressed={k.value === kind}
+            onClick={() => onKindChange(k.value)}
+            className={
+              k.value === kind
+                ? "rounded-full bg-brand-pink px-4 py-1.5 text-sm font-semibold text-primary-foreground"
+                : "rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            }
+          >
+            {k.label}
+          </button>
+        ))}
+      </div>
       {TABS.map((t) => (
         <button
           key={t.value}

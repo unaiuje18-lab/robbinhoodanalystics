@@ -1,4 +1,5 @@
 import { coinSeeds } from "@/data/coins";
+import { stockSeeds } from "@/data/stocks";
 import { hashStr, mulberry32, type Rng } from "@/lib/random";
 
 export const HISTORY_CAP = 120;
@@ -20,6 +21,8 @@ const VOLUME_DECAY = 0.9985;
 export type LiveCoin = {
   ticker: string;
   name: string;
+  /** Which market it belongs to — drives the grid toggle and the trade tape. */
+  kind: "meme" | "stock";
   priceUsd: number;
   /** Reference price 24h ago — change24hPct is always derived from this. */
   open24hUsd: number;
@@ -58,6 +61,8 @@ export type MarketState = {
 
 export type MarketTab = "trending" | "top" | "gainers" | "losers";
 
+export type MarketKind = "memes" | "stocks";
+
 /**
  * How long a ranking snapshot stays fixed before it may re-rank — 15 ticks
  * ≈ 30s. Re-ranking every tick made ~2/3 of the grid jump while scrolling.
@@ -74,9 +79,10 @@ function gauss(rng: Rng): number {
   return rng.next() + rng.next() + rng.next() - 1.5;
 }
 
-/** Per-tick volatility band for a coin: 0.3% – 1.5%. */
-function volFor(ticker: string): number {
-  return 0.003 + ((hashStr(ticker) % 100) / 100) * 0.012;
+/** Per-tick volatility band: memes 0.3%–1.5%, stocks a saner 0.08%–0.3%. */
+function volFor(kind: LiveCoin["kind"], ticker: string): number {
+  const jitter = (hashStr(ticker) % 100) / 100;
+  return kind === "meme" ? 0.003 + jitter * 0.012 : 0.0008 + jitter * 0.0022;
 }
 
 /** Skewed trade size: mostly $3–$50, occasionally whales up to ~$5k. */
@@ -104,16 +110,30 @@ function withDerivedChange(coin: LiveCoin): LiveCoin {
 export function seedMarket(): MarketState {
   const seed = hashStr("flaunch-live-seed-v1");
   const rng = mulberry32(seed);
-  const totalMcap = coinSeeds.reduce((sum, c) => sum + c.mcapUsd, 0);
-  const earningsScale = totalMcap > 0 ? TOTAL_EARNINGS_TARGET / totalMcap : 0;
+  const totalMemeMcap = coinSeeds.reduce((sum, c) => sum + c.mcapUsd, 0);
+  const earningsScale = totalMemeMcap > 0 ? TOTAL_EARNINGS_TARGET / totalMemeMcap : 0;
 
-  const coins: LiveCoin[] = coinSeeds.map((seedCoin) => {
+  const buildCoin = (
+    seedCoin: {
+      ticker: string;
+      name: string;
+      priceUsd: number;
+      mcapUsd: number;
+      change24hPct: number;
+      vol24hUsd: number;
+      image: string | null;
+      hue: number;
+      hue2: number;
+    },
+    kind: LiveCoin["kind"],
+    earningsUsd: number,
+  ): LiveCoin => {
     const open24hUsd = seedCoin.priceUsd / (1 + seedCoin.change24hPct / 100);
     // Walk backwards from today's price so history ends exactly at it.
     const history = new Array<number>(HISTORY_CAP);
     history[HISTORY_CAP - 1] = seedCoin.priceUsd;
     let p = seedCoin.priceUsd;
-    const vol = volFor(seedCoin.ticker);
+    const vol = volFor(kind, seedCoin.ticker);
     for (let i = HISTORY_CAP - 2; i >= 0; i--) {
       p = Math.max(p / (1 + gauss(rng) * vol), 1e-12);
       history[i] = p;
@@ -121,11 +141,12 @@ export function seedMarket(): MarketState {
     return withDerivedChange({
       ticker: seedCoin.ticker,
       name: seedCoin.name,
+      kind,
       priceUsd: seedCoin.priceUsd,
       open24hUsd,
       mcapUsd: seedCoin.mcapUsd,
       vol24hUsd: seedCoin.vol24hUsd,
-      earningsUsd: seedCoin.mcapUsd * earningsScale,
+      earningsUsd,
       change24hPct: seedCoin.change24hPct,
       history,
       lastDeltaPct: 0,
@@ -133,11 +154,18 @@ export function seedMarket(): MarketState {
       hue: seedCoin.hue,
       hue2: seedCoin.hue2,
     });
-  });
+  };
 
+  const coins: LiveCoin[] = [
+    ...coinSeeds.map((s) => buildCoin(s, "meme", s.mcapUsd * earningsScale)),
+    ...stockSeeds.map((s) => buildCoin(s, "stock", 0)),
+  ];
+
+  // The tape only carries meme trades — stocks don't print every 2 seconds.
+  const memes = coins.filter((c) => c.kind === "meme");
   const trades: TradeEvent[] = [];
   for (let i = 0; i < 14; i++) {
-    const coin = coins[Math.floor(rng.next() * coins.length)];
+    const coin = memes[Math.floor(rng.next() * memes.length)];
     if (!coin) continue;
     trades.push({
       id: `seed-${i}`,
@@ -153,10 +181,10 @@ export function seedMarket(): MarketState {
 
 function makeTradeSpec(
   rng: Rng,
-  coinCount: number,
+  memeIndices: number[],
 ): { coinIndex: number; action: TradeAction; amountUsd: number } {
   return {
-    coinIndex: Math.floor(rng.next() * coinCount),
+    coinIndex: memeIndices[Math.floor(rng.next() * memeIndices.length)] ?? 0,
     action: rng.next() < BUY_PROBABILITY ? "Buy" : "Sell",
     amountUsd: tradeAmount(rng),
   };
@@ -176,9 +204,10 @@ export function stepMarket(prev: MarketState): MarketState {
   const rng = mulberry32(prev.rngState);
 
   const specs = [] as { coinIndex: number; action: TradeAction; amountUsd: number }[];
-  if (prev.coins.length > 0 && rng.next() < TRADE_PROBABILITY) {
-    specs.push(makeTradeSpec(rng, prev.coins.length));
-    if (rng.next() < SECOND_TRADE_PROBABILITY) specs.push(makeTradeSpec(rng, prev.coins.length));
+  const memeIndices = prev.coins.flatMap((c, i) => (c.kind === "meme" ? [i] : []));
+  if (memeIndices.length > 0 && rng.next() < TRADE_PROBABILITY) {
+    specs.push(makeTradeSpec(rng, memeIndices));
+    if (rng.next() < SECOND_TRADE_PROBABILITY) specs.push(makeTradeSpec(rng, memeIndices));
   }
 
   const impactByIndex = new Map<number, number>();
@@ -193,7 +222,7 @@ export function stepMarket(prev: MarketState): MarketState {
   }
 
   const coins = prev.coins.map((coin, i) => {
-    let deltaPct = gauss(rng) * volFor(coin.ticker) * 100;
+    let deltaPct = gauss(rng) * volFor(coin.kind, coin.ticker) * 100;
     if (rng.next() < JUMP_PROBABILITY) {
       deltaPct += (rng.next() < 0.5 ? -1 : 1) * (1 + rng.next() * 5);
     }

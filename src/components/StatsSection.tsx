@@ -26,11 +26,13 @@ export function StatsSection() {
   const live = useMarket();
   const { market } = useMarketSnapshot();
   // Hero numbers stay live; the top lists re-rank on the slow snapshot so
-  // rows don't shuffle every tick.
+  // rows don't shuffle every tick. Both lists are meme-economy only — real
+  // stock volumes would dwarf the meme tape.
+  const memes = market.coins.filter((c) => c.kind === "meme");
   const earnings = totalCreatorEarnings(live.coins);
   const volume = total24hVolume(live.coins);
-  const topEarn = topByEarnings(market.coins, 4);
-  const topVol = topByVolume(market.coins, 3);
+  const topEarn = topByEarnings(memes, 4);
+  const topVol = topByVolume(memes, 3);
 
   return (
     <section className="grid gap-3 lg:grid-cols-3">

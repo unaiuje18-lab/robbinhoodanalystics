@@ -37,6 +37,28 @@ describe("seedMarket", () => {
       expect((coin.priceUsd / coin.open24hUsd - 1) * 100).toBeCloseTo(coin.change24hPct, 9);
     }
   });
+
+  it("seeds both markets — memes and the S&P 100 stocks", () => {
+    const { coins } = seedMarket();
+    const memes = coins.filter((c) => c.kind === "meme");
+    const stocks = coins.filter((c) => c.kind === "stock");
+    expect(memes.length).toBeGreaterThanOrEqual(40);
+    expect(stocks).toHaveLength(100);
+    for (const stock of stocks) {
+      expect(stock.mcapUsd).toBeGreaterThan(1e9); // S&P 100 members are all mega caps
+      expect(stock.earningsUsd).toBe(0); // creator earnings are a meme-economy concept
+    }
+  });
+
+  it("keeps the trade tape meme-only", () => {
+    let state = seedMarket();
+    let kinds = new Map(state.coins.map((c) => [c.ticker, c.kind] as const));
+    for (const t of state.trades) expect(kinds.get(t.ticker)).toBe("meme");
+
+    for (let i = 0; i < 30; i++) state = stepMarket(state);
+    kinds = new Map(state.coins.map((c) => [c.ticker, c.kind] as const));
+    for (const t of state.trades) expect(kinds.get(t.ticker)).toBe("meme");
+  });
 });
 
 describe("stepMarket", () => {
