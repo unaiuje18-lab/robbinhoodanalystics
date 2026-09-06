@@ -3,6 +3,7 @@ import {
   HISTORY_CAP,
   TRADES_CAP,
   filterCoins,
+  isRefreshDue,
   seedMarket,
   sortCoins,
   stepMarket,
@@ -165,6 +166,28 @@ describe("filterCoins", () => {
     const result = filterCoins(coins, trades, { query: "", recentBuys: true });
     expect(result.some((c) => c.ticker === first.ticker)).toBe(true);
     expect(result.some((c) => c.ticker === second.ticker)).toBe(false);
+  });
+});
+
+describe("isRefreshDue", () => {
+  const snapshot = seedMarket();
+
+  it("holds positions until the refresh interval elapses", () => {
+    expect(isRefreshDue(snapshot, { ...snapshot, tickIndex: snapshot.tickIndex + 1 }, 15)).toBe(
+      false,
+    );
+    expect(isRefreshDue(snapshot, { ...snapshot, tickIndex: snapshot.tickIndex + 14 }, 15)).toBe(
+      false,
+    );
+  });
+
+  it("allows a re-rank once the interval elapses", () => {
+    expect(isRefreshDue(snapshot, { ...snapshot, tickIndex: snapshot.tickIndex + 15 }, 15)).toBe(
+      true,
+    );
+    expect(isRefreshDue(snapshot, { ...snapshot, tickIndex: snapshot.tickIndex + 40 }, 15)).toBe(
+      true,
+    );
   });
 });
 

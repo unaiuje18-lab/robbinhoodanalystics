@@ -5,8 +5,8 @@ import { FilterBar } from "@/components/FilterBar";
 import { SiteHeader } from "@/components/SiteHeader";
 import { StatsSection } from "@/components/StatsSection";
 import { TickerBar } from "@/components/TickerBar";
-import { useMarket } from "@/hooks/useLiveMarket";
-import { filterCoins, sortCoins, type MarketTab } from "@/lib/market";
+import { useMarket, useMarketSnapshot } from "@/hooks/useLiveMarket";
+import { filterCoins, sortCoins, type LiveCoin, type MarketTab } from "@/lib/market";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,12 +30,22 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  const market = useMarket();
+  const live = useMarket();
+  const { market: ranking, refresh } = useMarketSnapshot();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<MarketTab>("trending");
   const [recentBuys, setRecentBuys] = useState(false);
 
-  const visible = sortCoins(filterCoins(market.coins, market.trades, { query, recentBuys }), tab);
+  // Order and filter membership come from the slow snapshot so cards hold
+  // their place while you scroll; prices and tick flashes stay live.
+  const liveByTicker = new Map(live.coins.map((c) => [c.ticker, c] as const));
+  const visible = sortCoins(
+    filterCoins(ranking.coins, ranking.trades, { query, recentBuys }),
+    tab,
+  ).flatMap((c) => {
+    const liveCoin = liveByTicker.get(c.ticker);
+    return liveCoin ? [liveCoin] : [];
+  });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -48,12 +58,15 @@ function Index() {
           tab={tab}
           onTabChange={setTab}
           recentBuys={recentBuys}
-          onRecentBuysChange={setRecentBuys}
+          onRecentBuysChange={(v) => {
+            setRecentBuys(v);
+            refresh();
+          }}
         />
         {visible.length > 0 ? (
           <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
             {visible.map((coin) => (
-              <CoinCard key={coin.ticker} coin={coin} tickIndex={market.tickIndex} />
+              <CoinCard key={coin.ticker} coin={coin} tickIndex={live.tickIndex} />
             ))}
           </section>
         ) : (

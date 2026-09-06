@@ -58,6 +58,17 @@ export type MarketState = {
 
 export type MarketTab = "trending" | "top" | "gainers" | "losers";
 
+/**
+ * How long a ranking snapshot stays fixed before it may re-rank — 15 ticks
+ * ≈ 30s. Re-ranking every tick made ~2/3 of the grid jump while scrolling.
+ */
+export const SNAPSHOT_REFRESH_TICKS = 15;
+
+/** True when `snapshot` is old enough to be replaced by `latest`. */
+export function isRefreshDue(snapshot: MarketState, latest: MarketState, everyN: number): boolean {
+  return latest.tickIndex - snapshot.tickIndex >= everyN;
+}
+
 /** Approximate standard normal via 3 uniforms (Irwin–Hall), range [-1.5, 1.5]. */
 function gauss(rng: Rng): number {
   return rng.next() + rng.next() + rng.next() - 1.5;

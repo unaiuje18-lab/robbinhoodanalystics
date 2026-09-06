@@ -1,5 +1,5 @@
 import { CoinAvatar, Dot } from "@/components/CoinArt";
-import { useMarket } from "@/hooks/useLiveMarket";
+import { useMarket, useMarketSnapshot } from "@/hooks/useLiveMarket";
 import { formatCompactUsd, formatPct, formatUsd } from "@/lib/format";
 import { topByEarnings, topByVolume, total24hVolume, totalCreatorEarnings } from "@/lib/market";
 
@@ -23,9 +23,12 @@ function LatestTradeChip({ index }: { index: number }) {
 }
 
 export function StatsSection() {
-  const market = useMarket();
-  const earnings = totalCreatorEarnings(market.coins);
-  const volume = total24hVolume(market.coins);
+  const live = useMarket();
+  const { market } = useMarketSnapshot();
+  // Hero numbers stay live; the top lists re-rank on the slow snapshot so
+  // rows don't shuffle every tick.
+  const earnings = totalCreatorEarnings(live.coins);
+  const volume = total24hVolume(live.coins);
   const topEarn = topByEarnings(market.coins, 4);
   const topVol = topByVolume(market.coins, 3);
 
