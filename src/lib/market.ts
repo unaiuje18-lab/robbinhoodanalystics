@@ -31,6 +31,8 @@ export type LiveCoin = {
   history: number[];
   /** Signed % move of the last tick — drives the green/red flash. */
   lastDeltaPct: number;
+  /** Logo URL, when the seed list provides one; components fall back to gradients. */
+  image: string | null;
   hue: number;
   hue2: number;
 };
@@ -116,6 +118,7 @@ export function seedMarket(): MarketState {
       change24hPct: seedCoin.change24hPct,
       history,
       lastDeltaPct: 0,
+      image: seedCoin.image,
       hue: seedCoin.hue,
       hue2: seedCoin.hue2,
     });

@@ -7,10 +7,11 @@ function LatestTradeChip({ index }: { index: number }) {
   const market = useMarket();
   const trade = market.trades[index];
   if (!trade) return null;
+  const coin = market.coins.find((c) => c.ticker === trade.ticker);
   const buy = trade.action === "Buy";
   return (
     <div className="absolute right-4 top-1/2 hidden -translate-y-1/2 items-center gap-2 rounded-full bg-card px-3 py-1.5 shadow-card sm:flex">
-      <Dot hue={market.coins.find((c) => c.ticker === trade.ticker)?.hue ?? 260} />
+      <Dot hue={coin?.hue ?? 260} image={coin?.image ?? null} />
       <div className="text-[11px] leading-tight">
         <div className="font-semibold">{trade.ticker}</div>
         <div className={buy ? "text-success" : "text-danger"}>
@@ -66,6 +67,7 @@ export function StatsSection() {
                 ticker={c.ticker}
                 hue={c.hue}
                 hue2={c.hue2}
+                image={c.image}
                 className="mx-auto aspect-square w-full rounded-xl"
               />
               <p className="mt-2 truncate text-xs font-semibold">{c.ticker}</p>
@@ -89,7 +91,7 @@ export function StatsSection() {
               className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 text-sm"
             >
               <div className="flex min-w-0 items-center gap-2">
-                <Dot hue={c.hue} />
+                <Dot hue={c.hue} image={c.image} />
                 <span className="truncate font-semibold">{c.ticker}</span>
               </div>
               <span className="text-right">

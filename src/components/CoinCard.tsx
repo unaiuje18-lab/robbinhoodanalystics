@@ -34,6 +34,7 @@ export function CoinCard({ coin, tickIndex }: { coin: LiveCoin; tickIndex: numbe
         ticker={coin.ticker}
         hue={coin.hue}
         hue2={coin.hue2}
+        image={coin.image}
         className="aspect-square w-full rounded-xl"
       />
       <div className="px-1.5 pb-1 pt-3">

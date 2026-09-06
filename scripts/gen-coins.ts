@@ -6,9 +6,10 @@
  *   bun scripts/gen-coins.ts <path>      # reads any .txt or .json (CoinGecko markets) file
  *
  * Accepted .txt formats: CSV, TSV, pipe-separated, or a markdown table.
- * Expected columns: symbol/ticker, name, price, market cap, 24h change (%), 24h volume.
- * With a header row, columns are matched by name in any order; without one,
- * that column order is assumed. $ , % and thousands separators are stripped.
+ * Expected columns: symbol/ticker, name, price, market cap, 24h change (%), 24h volume,
+ * and optionally image/logo (a coin logo URL). With a header row, columns are matched
+ * by name in any order; without one, that column order is assumed. $ , % and thousands
+ * separators are stripped.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
@@ -25,6 +26,7 @@ type Row = {
   mcapUsd: number;
   change24hPct: number;
   vol24hUsd: number;
+  image: string | null;
 };
 
 function parseNum(raw: string): number | null {
@@ -73,9 +75,18 @@ type Columns = {
   mcap: number;
   change: number;
   volume: number;
+  image: number;
 };
 
-const DEFAULT_COLUMNS: Columns = { ticker: 0, name: 1, price: 2, mcap: 3, change: 4, volume: 5 };
+const DEFAULT_COLUMNS: Columns = {
+  ticker: 0,
+  name: 1,
+  price: 2,
+  mcap: 3,
+  change: 4,
+  volume: 5,
+  image: -1,
+};
 
 function matchHeader(cells: string[]): Columns | null {
   if (cells.some((c) => parseNum(c) !== null)) return null; // headers have no numbers
@@ -88,6 +99,7 @@ function matchHeader(cells: string[]): Columns | null {
     mcap: find(/market\s*cap|mcap|marketcap/i),
     change: find(/change|24h\s*%/i, /vol/i),
     volume: find(/vol/i, /market|cap/i),
+    image: find(/^(image|logo|img)$/i),
   };
   if (cols.ticker === -1 || cols.name === -1) return null;
   return cols;
@@ -122,18 +134,19 @@ function parseTxt(content: string): Row[] {
     let mcapUsd = parseNum(cell(columns.mcap));
     const change24hPct = parseNum(cell(columns.change)) ?? 0;
     let vol24hUsd = parseNum(cell(columns.volume));
+    const image = columns.image >= 0 ? cell(columns.image) || null : null;
 
     if (priceUsd === null && mcapUsd !== null) priceUsd = mcapUsd / SUPPLY;
     if (mcapUsd === null && priceUsd !== null) mcapUsd = priceUsd * SUPPLY;
     if (vol24hUsd === null && mcapUsd !== null) vol24hUsd = mcapUsd * 0.02;
     if (priceUsd === null || mcapUsd === null) continue;
 
-    rows.push({ ticker, name, priceUsd, mcapUsd, change24hPct, vol24hUsd });
+    rows.push({ ticker, name, priceUsd, mcapUsd, change24hPct, vol24hUsd, image });
   }
 
   if (rows.length === 0) {
     console.error(
-      "No parseable rows in input. Expected columns: symbol, name, price, market cap, 24h change, 24h volume\n" +
+      "No parseable rows in input. Expected columns: symbol, name, price, market cap, 24h change, 24h volume[, image]\n" +
         "(CSV, TSV, pipe-separated or a markdown table — with or without a header row).",
     );
     process.exit(1);
@@ -144,6 +157,7 @@ function parseTxt(content: string): Row[] {
 type GeckoCoin = {
   symbol?: string;
   name?: string;
+  image?: string | null;
   current_price?: number;
   market_cap?: number;
   price_change_percentage_24h?: number | null;
@@ -170,6 +184,7 @@ function parseJson(content: string): Row[] {
       mcapUsd,
       change24hPct: c.price_change_percentage_24h ?? 0,
       vol24hUsd: c.total_volume ?? mcapUsd * 0.02,
+      image: typeof c.image === "string" && c.image ? c.image : null,
     });
   }
   if (rows.length === 0) {
@@ -201,6 +216,7 @@ function render(rows: Row[], source: string): string {
   out.push("  mcapUsd: number;");
   out.push("  change24hPct: number;");
   out.push("  vol24hUsd: number;");
+  out.push("  image: string | null;");
   out.push("  hue: number;");
   out.push("  hue2: number;");
   out.push("};");
@@ -212,7 +228,7 @@ function render(rows: Row[], source: string): string {
     out.push(
       `  { ticker: ${JSON.stringify(r.ticker)}, name: ${JSON.stringify(r.name)}, ` +
         `priceUsd: ${r.priceUsd}, mcapUsd: ${r.mcapUsd}, change24hPct: ${r.change24hPct}, ` +
-        `vol24hUsd: ${r.vol24hUsd}, hue: ${hue}, hue2: ${hue2} },`,
+        `vol24hUsd: ${r.vol24hUsd}, image: ${JSON.stringify(r.image)}, hue: ${hue}, hue2: ${hue2} },`,
     );
   }
   out.push("];");

@@ -70,6 +70,7 @@ function CoinDetail() {
             ticker={coin.ticker}
             hue={coin.hue}
             hue2={coin.hue2}
+            image={coin.image}
             className="h-16 w-16 shrink-0 rounded-2xl"
           />
           <div className="min-w-0">
