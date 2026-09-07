@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useMarket } from "@/hooks/useLiveMarket";
 import { formatCompactUsd, formatUsd } from "@/lib/format";
 import { Dot } from "@/components/CoinArt";
@@ -14,13 +15,17 @@ export function TickerBar() {
 
   return (
     <div className="overflow-hidden border-b border-border bg-card/80 py-2">
-      <div className="flex w-max animate-marquee gap-2 px-2">
+      {/* The marquee pauses while hovered so the chips are easy to click. */}
+      <div className="flex w-max animate-marquee gap-2 px-2 hover:[animation-play-state:paused]">
         {items.map((t, i) => {
           const coin = coinByTicker.get(t.ticker);
           return (
-            <div
+            <Link
               key={i}
-              className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5"
+              to="/coin/$ticker"
+              params={{ ticker: t.ticker }}
+              title={`Open ${t.ticker}`}
+              className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 transition-colors hover:border-brand-pink hover:bg-muted/60"
             >
               <Dot hue={coin?.hue ?? 260} image={coin?.image ?? null} />
               <div className="leading-tight">
@@ -38,7 +43,7 @@ export function TickerBar() {
                   </span>
                 </div>
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
