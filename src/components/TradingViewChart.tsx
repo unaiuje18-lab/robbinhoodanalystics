@@ -30,17 +30,10 @@ export function TradingViewChart({ tvSymbol }: { tvSymbol: string }) {
       style: "1",
       locale: "en",
       autosize: true,
-      // "Clean candles" look: no toolbars, no legend, no date-range bar —
-      // just the price chart blended into the card.
-      hide_side_toolbar: true,
-      hide_top_toolbar: true,
-      hide_legend: true,
-      withdateranges: false,
+      hide_side_toolbar: false,
       allow_symbol_change: false,
       save_image: false,
       calendar: false,
-      backgroundColor: "rgba(255, 255, 255, 1)",
-      gridColor: "rgba(0, 0, 0, 0.06)",
       support_host: "https://www.tradingview.com",
     });
     container.appendChild(script);
@@ -51,7 +44,7 @@ export function TradingViewChart({ tvSymbol }: { tvSymbol: string }) {
   }, [tvSymbol]);
 
   return (
-    <div className="h-[420px] overflow-hidden rounded-xl bg-card">
+    <div className="h-[420px] overflow-hidden rounded-xl border border-border bg-card">
       <div ref={containerRef} className="tradingview-widget-container h-full w-full" />
     </div>
   );
