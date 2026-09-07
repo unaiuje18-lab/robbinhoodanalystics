@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { BackToTop } from "@/components/BackToTop";
 import { LiveMarketProvider } from "@/components/LiveMarketProvider";
 
 function NotFoundComponent() {
@@ -136,6 +137,7 @@ function RootComponent() {
       <LiveMarketProvider>
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
+        <BackToTop />
       </LiveMarketProvider>
     </QueryClientProvider>
   );
