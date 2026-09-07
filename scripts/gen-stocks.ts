@@ -1,130 +1,117 @@
 /**
- * Generates src/data/stocks.ts — a real snapshot of the S&P 100.
+ * Generates src/data/stocks.ts — the top US-listed stocks by real market cap.
  *
  * Usage: bun run gen:stocks
  *
- * Per company: real price, real 24h change (vs previous session close), real
- * session volume and the official name come from Yahoo's public chart API
- * (no key). Market cap = real price × shares outstanding (see stock-universe.ts
- * — approximate to a few %). Logos are the company domain's favicon PNG via
- * Google's favicon service. Re-run any time to refresh the snapshot.
+ * Source: Nasdaq's public screener download across the NASDAQ, NYSE and AMEX
+ * exchanges (no key): real market cap, last price, day change and the official
+ * name. TradingView symbols are resolved via symbol search so every stock gets
+ * a real candlestick chart. Logos use the curated domains in
+ * scripts/stock-universe.ts (S&P 100); stocks without a curated domain fall
+ * back to the gradient art rather than risking a wrong logo. Re-run any time
+ * to refresh the snapshot.
  */
 import { writeFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { universe } from "./stock-universe";
 import { hashStr } from "../src/lib/random";
-import { universe, type UniverseEntry } from "./stock-universe";
+import { mapPool, resolveTvSymbol } from "./tv-search";
 
-const CONCURRENCY = 8;
+const TOP_N = 500;
+const TV_CONCURRENCY = 8;
+const EXCHANGES = ["nasdaq", "nyse", "amex"];
 
-type ChartResponse = {
-  chart?: {
-    result?: Array<{
-      meta?: {
-        shortName?: string;
-        longName?: string;
-        regularMarketPrice?: number;
-        regularMarketVolume?: number;
-        chartPreviousClose?: number;
-      };
-      indicators?: { quote?: Array<{ close?: (number | null)[] }> };
-    }>;
-  };
+type ScreenerRow = {
+  symbol?: string;
+  name?: string;
+  lastsale?: string;
+  pctchange?: string;
+  volume?: string;
+  marketCap?: string;
 };
 
-type Quote = { name: string; priceUsd: number; change24hPct: number; vol24hUsd: number };
+type Row = {
+  ticker: string;
+  name: string;
+  priceUsd: number;
+  mcapUsd: number;
+  change24hPct: number;
+  vol24hUsd: number;
+  image: string | null;
+  tvSymbol: string | null;
+  hue: number;
+  hue2: number;
+};
 
-function yahooSymbol(ticker: string): string {
-  return ticker.replace(/\./g, "-"); // Yahoo lists class-B shares as BRK-B
+function parseNum(s: string | undefined): number {
+  const n = Number((s ?? "").replace(/[$,%\s]/g, ""));
+  return Number.isFinite(n) ? n : 0;
 }
 
-async function fetchChart(symbol: string): Promise<ChartResponse> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
+async function fetchExchangeRows(exchange: string): Promise<ScreenerRow[]> {
+  const url =
+    `https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&download=true` +
+    `&exchange=${exchange}`;
   const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; flaunch-demo/1.0)" },
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      Accept: "application/json",
+    },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as ChartResponse;
-}
-
-async function quoteFor(entry: UniverseEntry): Promise<Quote | null> {
-  for (const symbol of [entry.ticker, ...(entry.altTickers ?? [])]) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const result = (await fetchChart(yahooSymbol(symbol))).chart?.result?.[0];
-        const meta = result?.meta;
-        const price = meta?.regularMarketPrice;
-        if (!result || price === undefined || price === null) break; // unknown symbol → try alias
-
-        const closes = (result.indicators?.quote?.[0]?.close ?? []).filter(
-          (c): c is number => typeof c === "number",
-        );
-        // 24h change: today's price vs the previous session's close.
-        const prevClose = closes.length >= 2 ? closes[closes.length - 2] : meta?.chartPreviousClose;
-        const change24hPct = prevClose ? (price / prevClose - 1) * 100 : 0;
-        return {
-          name: meta?.shortName ?? meta?.longName ?? entry.ticker,
-          priceUsd: price,
-          change24hPct: Math.round(change24hPct * 100) / 100,
-          vol24hUsd: Math.round((meta?.regularMarketVolume ?? 0) * price),
-        };
-      } catch (err) {
-        if (attempt === 1) {
-          console.error(`  ${symbol}: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
+  if (!res.ok) {
+    console.error(`${exchange}: HTTP ${res.status} — skipped.`);
+    return [];
   }
-  return null;
+  const json = (await res.json()) as { data?: { rows?: ScreenerRow[] } };
+  return json.data?.rows ?? [];
 }
 
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await fn(items[index]!);
-    }
-  }
-  await Promise.all(Array.from({ length: limit }, worker));
-  return results;
-}
-
-const fetched = await mapPool(universe, CONCURRENCY, async (entry) => ({
-  entry,
-  quote: await quoteFor(entry),
-}));
-
-const missing = fetched.filter((f) => f.quote === null).map((f) => f.entry.ticker);
-if (missing.length > 0) console.error(`No quote for: ${missing.join(", ")} — skipped.`);
-
-const rows = fetched
-  .filter((f): f is { entry: UniverseEntry; quote: Quote } => f.quote !== null)
-  .map(({ entry, quote }) => ({
-    ticker: entry.ticker.toUpperCase(),
-    name: quote.name,
-    priceUsd: quote.priceUsd,
-    mcapUsd: Math.round(quote.priceUsd * entry.sharesB * 1e9),
-    change24hPct: quote.change24hPct,
-    vol24hUsd: quote.vol24hUsd,
-    image: `https://www.google.com/s2/favicons?domain=${entry.domain}&sz=128`,
-    tvSymbol: `${entry.exchange}:${entry.ticker}`,
-    hue: hashStr(entry.ticker) % 360,
-    hue2: (hashStr(entry.ticker + entry.domain) + 40) % 360,
-  }));
+const screeners = await Promise.all(EXCHANGES.map(fetchExchangeRows));
+const rows = screeners
+  .flat()
+  .map((r) => ({
+    // The screener writes class shares as "BRK/A"; normalize to "BRK.A",
+    // which is also the TradingView convention.
+    ticker: (r.symbol ?? "").trim().toUpperCase().replace("/", "."),
+    name: (r.name ?? "").trim(),
+    priceUsd: parseNum(r.lastsale),
+    mcapUsd: Math.round(parseNum(r.marketCap)),
+    change24hPct: Math.round(parseNum(r.pctchange) * 100) / 100,
+    vol24hUsd: Math.round(parseNum(r.volume) * parseNum(r.lastsale)),
+  }))
+  .filter((r) => r.ticker.length > 0 && r.name.length > 0 && r.priceUsd > 0 && r.mcapUsd > 0)
+  .sort((a, b) => b.mcapUsd - a.mcapUsd)
+  .slice(0, TOP_N);
 
 if (rows.length === 0) {
-  console.error("No stock quotes fetched — nothing written.");
+  console.error("No screener rows fetched — nothing written.");
   process.exit(1);
 }
 
+const withTv = await mapPool(rows, TV_CONCURRENCY, async (row) => ({
+  ...row,
+  tvSymbol: await resolveTvSymbol("stock", row.ticker, row.name),
+}));
+const resolved = withTv.filter((r) => r.tvSymbol !== null).length;
+console.log(`TradingView symbols resolved for ${resolved}/${withTv.length} stocks`);
+
+const domainByTicker = new Map(universe.map((u) => [u.ticker, u.domain] as const));
+const finalRows: Row[] = withTv.map((r) => {
+  const domain = domainByTicker.get(r.ticker);
+  return {
+    ...r,
+    image: domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null,
+    hue: hashStr(r.ticker) % 360,
+    hue2: (hashStr(r.ticker + (domain ?? r.ticker)) + 40) % 360,
+  };
+});
+
 const out: string[] = [];
 out.push(
-  "// AUTO-GENERATED by `bun run gen:stocks` (real Yahoo Finance snapshot) — do not edit by hand.",
+  "// AUTO-GENERATED by `bun run gen:stocks` (Nasdaq screener, real market caps) — do not edit by hand.",
 );
-out.push("// Market cap = real price × approximate shares outstanding. Re-run to refresh prices.");
+out.push("// Re-run any time to refresh the snapshot: bun run gen:stocks");
 out.push("");
 out.push("export type StockSeed = {");
 out.push("  ticker: string;");
@@ -134,13 +121,13 @@ out.push("  mcapUsd: number;");
 out.push("  change24hPct: number;");
 out.push("  vol24hUsd: number;");
 out.push("  image: string | null;");
-out.push("  tvSymbol: string;");
+out.push("  tvSymbol: string | null;");
 out.push("  hue: number;");
 out.push("  hue2: number;");
 out.push("};");
 out.push("");
 out.push("export const stockSeeds: StockSeed[] = [");
-for (const r of rows) {
+for (const r of finalRows) {
   out.push(
     `  { ticker: ${JSON.stringify(r.ticker)}, name: ${JSON.stringify(r.name)}, ` +
       `priceUsd: ${r.priceUsd}, mcapUsd: ${r.mcapUsd}, change24hPct: ${r.change24hPct}, ` +
@@ -153,4 +140,4 @@ out.push("");
 
 const outPath = fileURLToPath(new URL("../src/data/stocks.ts", import.meta.url));
 writeFileSync(outPath, out.join("\n"));
-console.log(`Fetched ${rows.length}/${universe.length} stocks → src/data/stocks.ts`);
+console.log(`Fetched ${finalRows.length} stocks (top ${TOP_N} by market cap) → src/data/stocks.ts`);

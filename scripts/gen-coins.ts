@@ -1,23 +1,28 @@
 /**
- * Generates src/data/coins.ts from the project's coin list.
+ * Generates src/data/coins.ts — the meme-coin universe.
  *
  * Usage:
- *   bun run gen:coins                    # reads top50cryptos.txt
- *   bun scripts/gen-coins.ts <path>      # reads any .txt or .json (CoinGecko markets) file
+ *   bun run gen:coins                 # top 250 from CoinGecko's meme category
+ *   bun scripts/gen-coins.ts <file>   # .txt (CSV/TSV/pipe/markdown table) or
+ *                                     # .json (CoinGecko /coins/markets shape)
  *
- * Accepted .txt formats: CSV, TSV, pipe-separated, or a markdown table.
- * Expected columns: symbol/ticker, name, price, market cap, 24h change (%), 24h volume,
- * and optionally image/logo (a coin logo URL). With a header row, columns are matched
- * by name in any order; without one, that column order is assumed. $ , % and thousands
+ * Expected .txt columns: symbol/ticker, name, price, market cap, 24h change (%),
+ * 24h volume, optionally image/logo. With a header row, columns are matched by
+ * name in any order; without one, that order is assumed. $ , % and thousands
  * separators are stripped.
+ *
+ * Every coin gets its TradingView symbol resolved (curated overrides first,
+ * then TradingView symbol search) so detail pages can show real candlesticks;
+ * unresolved coins fall back to the simulated chart.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { tvSymbolsByTicker } from "../src/data/tvSymbols";
 import { hashStr } from "../src/lib/random";
+import { mapPool, resolveTvSymbol } from "./tv-search";
 
-const MAX_COINS = 50;
+const MAX_COINS = 250;
 const SUPPLY = 1_000_000_000; // fallback supply used to derive price/mcap when one is missing
 const TV_CONCURRENCY = 6;
 
@@ -31,108 +36,6 @@ type Row = {
   image: string | null;
   tvSymbol: string | null;
 };
-
-/**
- * Resolve a TradingView listing for a coin so its detail page can show real
- * candlesticks. Curated overrides win; otherwise search TradingView's public
- * symbol-search (the endpoint their own widget uses) and prefer spot listings
- * on major exchanges with a USDT/USD quote. null → detail page keeps the
- * simulated chart.
- */
-const EXCHANGE_PRIORITY = [
-  "BINANCE",
-  "COINBASE",
-  "KRAKEN",
-  "BYBIT",
-  "OKX",
-  "GATEIO",
-  "GATE",
-  "KUCOIN",
-  "BITGET",
-  "MEXC",
-  "HTX",
-];
-
-type TvSearchHit = { exchange?: string; symbol?: string; description?: string; type?: string };
-
-function stripEm(s: string): string {
-  return s.replace(/<\/?em>/g, "");
-}
-
-async function searchTvSymbol(ticker: string, name?: string): Promise<string | null> {
-  const queries = [ticker, ...(name ? [name] : [])];
-  for (const query of queries) {
-    try {
-      const url =
-        `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(query)}` +
-        `&hl=1&lang=en&domain=production`;
-      const res = await fetch(url, { headers: { Origin: "https://www.tradingview.com" } });
-      if (!res.ok) continue;
-      const hits = (await res.json()) as TvSearchHit[];
-      const wanted = ticker.toUpperCase();
-      const wantedName = (name ?? "").replace(/<[^>]*>/g, "").toUpperCase();
-      const matches = hits
-        .filter((h) => typeof h.exchange === "string" && typeof h.symbol === "string")
-        .filter((h) => {
-          const symbolUpper = stripEm(h.symbol!).toUpperCase();
-          const descriptionUpper = stripEm(h.description ?? "").toUpperCase();
-          return (
-            symbolUpper.startsWith(wanted) ||
-            (wantedName.length >= 3 && descriptionUpper.includes(wantedName))
-          );
-        })
-        .filter((h) => h.type === "spot" || h.type === "swap");
-      if (matches.length === 0) continue;
-
-      const score = (h: TvSearchHit): number => {
-        const exchangeRank = EXCHANGE_PRIORITY.indexOf(h.exchange!.toUpperCase());
-        const exchangeScore = exchangeRank === -1 ? EXCHANGE_PRIORITY.length : exchangeRank;
-        const symbolUpper = stripEm(h.symbol!).toUpperCase();
-        const exactBase = symbolUpper.startsWith(wanted) ? 0 : 1;
-        const quoteScore = symbolUpper.endsWith("USDT") || symbolUpper.endsWith("USD") ? 0 : 1;
-        const typeScore = h.type === "spot" ? 0 : 1;
-        return exchangeScore * 8 + exactBase * 4 + quoteScore * 2 + typeScore;
-      };
-      const best = matches.reduce((a, b) => (score(b) < score(a) ? b : a));
-      return `${stripEm(best.exchange!).toUpperCase()}:${stripEm(best.symbol!).toUpperCase()}`;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await fn(items[index]!);
-    }
-  }
-  await Promise.all(Array.from({ length: limit }, worker));
-  return results;
-}
-
-async function resolveTvSymbols(rows: Row[]): Promise<Row[]> {
-  const curated = rows.filter((r) => tvSymbolsByTicker[r.ticker]);
-  const needSearch = rows.filter((r) => !tvSymbolsByTicker[r.ticker]);
-  const resolved = await mapPool(needSearch, TV_CONCURRENCY, async (row) => ({
-    ticker: row.ticker,
-    tvSymbol: await searchTvSymbol(row.ticker, row.name),
-  }));
-  const byTicker = new Map(resolved.map((r) => [r.ticker, r.tvSymbol] as const));
-  const found = resolved.filter((r) => r.tvSymbol !== null).length;
-  console.log(
-    `TradingView symbols: ${curated.length} curated + ${found}/${needSearch.length} searched` +
-      ` (${rows.length - curated.length - found} unresolved → simulated chart)`,
-  );
-  return rows.map((r) => ({
-    ...r,
-    tvSymbol: tvSymbolsByTicker[r.ticker] ?? byTicker.get(r.ticker) ?? null,
-  }));
-}
 
 function parseNum(raw: string): number | null {
   const cleaned = raw.replace(/[$,%\s]/g, "");
@@ -300,55 +203,98 @@ function parseJson(content: string): Row[] {
   return rows;
 }
 
-function dedupeAndCap(rows: Row[]): Row[] {
+/** The whole meme category from CoinGecko, two pages of 250. */
+async function fetchMemeRows(): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (const page of [1, 2]) {
+    const url =
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=meme-token` +
+      `&order=market_cap_desc&per_page=250&page=${page}&price_change_percentage=24h`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) {
+      console.error(`CoinGecko page ${page}: HTTP ${res.status} — skipped.`);
+      continue;
+    }
+    rows.push(...parseJson(await res.text()));
+  }
+  return rows;
+}
+
+function dedupeAndCap(rows: Row[], cap: number): Row[] {
   const seen = new Set<string>();
   const unique = rows.filter((r) => {
     if (seen.has(r.ticker)) return false;
     seen.add(r.ticker);
     return true;
   });
-  return unique.sort((a, b) => b.mcapUsd - a.mcapUsd).slice(0, MAX_COINS);
+  return unique.sort((a, b) => b.mcapUsd - a.mcapUsd).slice(0, cap);
 }
 
-function render(rows: Row[], source: string): string {
-  const out: string[] = [];
-  out.push(`// AUTO-GENERATED by \`bun run gen:coins\` from ${source} — do not edit by hand.`);
-  out.push("// Regenerate after changing the source list: bun run gen:coins");
-  out.push("");
-  out.push("export type CoinSeed = {");
-  out.push("  ticker: string;");
-  out.push("  name: string;");
-  out.push("  priceUsd: number;");
-  out.push("  mcapUsd: number;");
-  out.push("  change24hPct: number;");
-  out.push("  vol24hUsd: number;");
-  out.push("  image: string | null;");
-  out.push("  tvSymbol: string | null;");
-  out.push("  hue: number;");
-  out.push("  hue2: number;");
-  out.push("};");
-  out.push("");
-  out.push("export const coinSeeds: CoinSeed[] = [");
-  for (const r of rows) {
-    const hue = hashStr(r.ticker) % 360;
-    const hue2 = (hue + 40 + (hashStr(r.name) % 40)) % 360;
-    out.push(
-      `  { ticker: ${JSON.stringify(r.ticker)}, name: ${JSON.stringify(r.name)}, ` +
-        `priceUsd: ${r.priceUsd}, mcapUsd: ${r.mcapUsd}, change24hPct: ${r.change24hPct}, ` +
-        `vol24hUsd: ${r.vol24hUsd}, image: ${JSON.stringify(r.image)}, ` +
-        `tvSymbol: ${JSON.stringify(r.tvSymbol)}, hue: ${hue}, hue2: ${hue2} },`,
-    );
-  }
-  out.push("];");
-  out.push("");
-  return out.join("\n");
+async function resolveTvSymbols(rows: Row[]): Promise<Row[]> {
+  const curated = rows.filter((r) => tvSymbolsByTicker[r.ticker]);
+  const needSearch = rows.filter((r) => !tvSymbolsByTicker[r.ticker]);
+  const resolved = await mapPool(needSearch, TV_CONCURRENCY, async (row) => ({
+    ticker: row.ticker,
+    tvSymbol: await resolveTvSymbol("crypto", row.ticker, row.name),
+  }));
+  const byTicker = new Map(resolved.map((r) => [r.ticker, r.tvSymbol] as const));
+  const found = resolved.filter((r) => r.tvSymbol !== null).length;
+  console.log(
+    `TradingView symbols: ${curated.length} curated + ${found}/${needSearch.length} searched` +
+      ` (${rows.length - curated.length - found} unresolved → simulated chart)`,
+  );
+  return rows.map((r) => ({
+    ...r,
+    tvSymbol: tvSymbolsByTicker[r.ticker] ?? byTicker.get(r.ticker) ?? null,
+  }));
 }
 
-const inputArg = process.argv[2] ?? "top50cryptos.txt";
-const content = readFileSync(inputArg, "utf8");
-const parsed = dedupeAndCap(inputArg.endsWith(".json") ? parseJson(content) : parseTxt(content));
+const inputArg = process.argv[2];
+let parsed: Row[];
+if (inputArg) {
+  const content = readFileSync(inputArg, "utf8");
+  parsed = dedupeAndCap(
+    inputArg.endsWith(".json") ? parseJson(content) : parseTxt(content),
+    MAX_COINS,
+  );
+} else {
+  parsed = dedupeAndCap(await fetchMemeRows(), MAX_COINS);
+}
 const rows = await resolveTvSymbols(parsed);
 
+const out: string[] = [];
+out.push(
+  "// AUTO-GENERATED by `bun run gen:coins` (CoinGecko meme category or a provided list) — do not edit by hand.",
+);
+out.push("// Regenerate: bun run gen:coins (or pass a .txt/.json file as an argument).");
+out.push("");
+out.push("export type CoinSeed = {");
+out.push("  ticker: string;");
+out.push("  name: string;");
+out.push("  priceUsd: number;");
+out.push("  mcapUsd: number;");
+out.push("  change24hPct: number;");
+out.push("  vol24hUsd: number;");
+out.push("  image: string | null;");
+out.push("  tvSymbol: string | null;");
+out.push("  hue: number;");
+out.push("  hue2: number;");
+out.push("};");
+out.push("");
+out.push("export const coinSeeds: CoinSeed[] = [");
+for (const r of rows) {
+  const hue = hashStr(r.ticker) % 360;
+  const hue2 = (hue + 40 + (hashStr(r.name) % 40)) % 360;
+  out.push(
+    `  { ticker: ${JSON.stringify(r.ticker)}, name: ${JSON.stringify(r.name)}, ` +
+      `priceUsd: ${r.priceUsd}, mcapUsd: ${r.mcapUsd}, change24hPct: ${r.change24hPct}, ` +
+      `vol24hUsd: ${r.vol24hUsd}, image: ${JSON.stringify(r.image)}, ` +
+      `tvSymbol: ${JSON.stringify(r.tvSymbol)}, hue: ${hue}, hue2: ${hue2} },`,
+  );
+}
+out.push("];");
+out.push("");
+
 const outPath = fileURLToPath(new URL("../src/data/coins.ts", import.meta.url));
-writeFileSync(outPath, render(rows, inputArg.endsWith(".json") ? "a JSON coin list" : inputArg));
-console.log(`Parsed ${rows.length} coins from ${inputArg} → src/data/coins.ts`);
+writeFileSync(outPath, out.join("\n"));
+console.log(`Parsed ${rows.length} coins → src/data/coins.ts`);

@@ -38,17 +38,20 @@ describe("seedMarket", () => {
     }
   });
 
-  it("seeds both markets — memes and the S&P 100 stocks", () => {
+  it("seeds both markets — memes and the top US stocks", () => {
     const { coins } = seedMarket();
     const memes = coins.filter((c) => c.kind === "meme");
     const stocks = coins.filter((c) => c.kind === "stock");
-    expect(memes.length).toBeGreaterThanOrEqual(40);
-    expect(stocks).toHaveLength(100);
+    expect(memes.length).toBeGreaterThanOrEqual(200);
+    expect(stocks.length).toBeGreaterThanOrEqual(400);
     for (const stock of stocks) {
-      expect(stock.mcapUsd).toBeGreaterThan(1e9); // S&P 100 members are all mega caps
+      expect(stock.mcapUsd).toBeGreaterThan(1e9); // top-500 US listings are all > $1B
       expect(stock.earningsUsd).toBe(0); // creator earnings are a meme-economy concept
-      expect(stock.tvSymbol).toMatch(/^(NASDAQ|NYSE):/); // real candlestick chart symbol
+      expect(
+        stock.tvSymbol === null || /^(NASDAQ|NYSE|AMEX|NYSEAMERICAN):/.test(stock.tvSymbol),
+      ).toBe(true);
     }
+    expect(stocks.filter((s) => s.tvSymbol !== null).length).toBeGreaterThan(400);
     expect(memes.some((c) => c.tvSymbol !== null)).toBe(true); // major memes get TV charts too
   });
 
