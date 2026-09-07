@@ -14,10 +14,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { tvSymbolsByTicker } from "../src/data/tvSymbols";
 import { hashStr } from "../src/lib/random";
 
 const MAX_COINS = 50;
 const SUPPLY = 1_000_000_000; // fallback supply used to derive price/mcap when one is missing
+const TV_CONCURRENCY = 6;
 
 type Row = {
   ticker: string;
@@ -27,7 +29,110 @@ type Row = {
   change24hPct: number;
   vol24hUsd: number;
   image: string | null;
+  tvSymbol: string | null;
 };
+
+/**
+ * Resolve a TradingView listing for a coin so its detail page can show real
+ * candlesticks. Curated overrides win; otherwise search TradingView's public
+ * symbol-search (the endpoint their own widget uses) and prefer spot listings
+ * on major exchanges with a USDT/USD quote. null → detail page keeps the
+ * simulated chart.
+ */
+const EXCHANGE_PRIORITY = [
+  "BINANCE",
+  "COINBASE",
+  "KRAKEN",
+  "BYBIT",
+  "OKX",
+  "GATEIO",
+  "GATE",
+  "KUCOIN",
+  "BITGET",
+  "MEXC",
+  "HTX",
+];
+
+type TvSearchHit = { exchange?: string; symbol?: string; description?: string; type?: string };
+
+function stripEm(s: string): string {
+  return s.replace(/<\/?em>/g, "");
+}
+
+async function searchTvSymbol(ticker: string, name?: string): Promise<string | null> {
+  const queries = [ticker, ...(name ? [name] : [])];
+  for (const query of queries) {
+    try {
+      const url =
+        `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(query)}` +
+        `&hl=1&lang=en&domain=production`;
+      const res = await fetch(url, { headers: { Origin: "https://www.tradingview.com" } });
+      if (!res.ok) continue;
+      const hits = (await res.json()) as TvSearchHit[];
+      const wanted = ticker.toUpperCase();
+      const wantedName = (name ?? "").replace(/<[^>]*>/g, "").toUpperCase();
+      const matches = hits
+        .filter((h) => typeof h.exchange === "string" && typeof h.symbol === "string")
+        .filter((h) => {
+          const symbolUpper = stripEm(h.symbol!).toUpperCase();
+          const descriptionUpper = stripEm(h.description ?? "").toUpperCase();
+          return (
+            symbolUpper.startsWith(wanted) ||
+            (wantedName.length >= 3 && descriptionUpper.includes(wantedName))
+          );
+        })
+        .filter((h) => h.type === "spot" || h.type === "swap");
+      if (matches.length === 0) continue;
+
+      const score = (h: TvSearchHit): number => {
+        const exchangeRank = EXCHANGE_PRIORITY.indexOf(h.exchange!.toUpperCase());
+        const exchangeScore = exchangeRank === -1 ? EXCHANGE_PRIORITY.length : exchangeRank;
+        const symbolUpper = stripEm(h.symbol!).toUpperCase();
+        const exactBase = symbolUpper.startsWith(wanted) ? 0 : 1;
+        const quoteScore = symbolUpper.endsWith("USDT") || symbolUpper.endsWith("USD") ? 0 : 1;
+        const typeScore = h.type === "spot" ? 0 : 1;
+        return exchangeScore * 8 + exactBase * 4 + quoteScore * 2 + typeScore;
+      };
+      const best = matches.reduce((a, b) => (score(b) < score(a) ? b : a));
+      return `${stripEm(best.exchange!).toUpperCase()}:${stripEm(best.symbol!).toUpperCase()}`;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]!);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, worker));
+  return results;
+}
+
+async function resolveTvSymbols(rows: Row[]): Promise<Row[]> {
+  const curated = rows.filter((r) => tvSymbolsByTicker[r.ticker]);
+  const needSearch = rows.filter((r) => !tvSymbolsByTicker[r.ticker]);
+  const resolved = await mapPool(needSearch, TV_CONCURRENCY, async (row) => ({
+    ticker: row.ticker,
+    tvSymbol: await searchTvSymbol(row.ticker, row.name),
+  }));
+  const byTicker = new Map(resolved.map((r) => [r.ticker, r.tvSymbol] as const));
+  const found = resolved.filter((r) => r.tvSymbol !== null).length;
+  console.log(
+    `TradingView symbols: ${curated.length} curated + ${found}/${needSearch.length} searched` +
+      ` (${rows.length - curated.length - found} unresolved → simulated chart)`,
+  );
+  return rows.map((r) => ({
+    ...r,
+    tvSymbol: tvSymbolsByTicker[r.ticker] ?? byTicker.get(r.ticker) ?? null,
+  }));
+}
 
 function parseNum(raw: string): number | null {
   const cleaned = raw.replace(/[$,%\s]/g, "");
@@ -141,7 +246,7 @@ function parseTxt(content: string): Row[] {
     if (vol24hUsd === null && mcapUsd !== null) vol24hUsd = mcapUsd * 0.02;
     if (priceUsd === null || mcapUsd === null) continue;
 
-    rows.push({ ticker, name, priceUsd, mcapUsd, change24hPct, vol24hUsd, image });
+    rows.push({ ticker, name, priceUsd, mcapUsd, change24hPct, vol24hUsd, image, tvSymbol: null });
   }
 
   if (rows.length === 0) {
@@ -185,6 +290,7 @@ function parseJson(content: string): Row[] {
       change24hPct: c.price_change_percentage_24h ?? 0,
       vol24hUsd: c.total_volume ?? mcapUsd * 0.02,
       image: typeof c.image === "string" && c.image ? c.image : null,
+      tvSymbol: null,
     });
   }
   if (rows.length === 0) {
@@ -217,6 +323,7 @@ function render(rows: Row[], source: string): string {
   out.push("  change24hPct: number;");
   out.push("  vol24hUsd: number;");
   out.push("  image: string | null;");
+  out.push("  tvSymbol: string | null;");
   out.push("  hue: number;");
   out.push("  hue2: number;");
   out.push("};");
@@ -228,7 +335,8 @@ function render(rows: Row[], source: string): string {
     out.push(
       `  { ticker: ${JSON.stringify(r.ticker)}, name: ${JSON.stringify(r.name)}, ` +
         `priceUsd: ${r.priceUsd}, mcapUsd: ${r.mcapUsd}, change24hPct: ${r.change24hPct}, ` +
-        `vol24hUsd: ${r.vol24hUsd}, image: ${JSON.stringify(r.image)}, hue: ${hue}, hue2: ${hue2} },`,
+        `vol24hUsd: ${r.vol24hUsd}, image: ${JSON.stringify(r.image)}, ` +
+        `tvSymbol: ${JSON.stringify(r.tvSymbol)}, hue: ${hue}, hue2: ${hue2} },`,
     );
   }
   out.push("];");
@@ -238,7 +346,8 @@ function render(rows: Row[], source: string): string {
 
 const inputArg = process.argv[2] ?? "top50cryptos.txt";
 const content = readFileSync(inputArg, "utf8");
-const rows = dedupeAndCap(inputArg.endsWith(".json") ? parseJson(content) : parseTxt(content));
+const parsed = dedupeAndCap(inputArg.endsWith(".json") ? parseJson(content) : parseTxt(content));
+const rows = await resolveTvSymbols(parsed);
 
 const outPath = fileURLToPath(new URL("../src/data/coins.ts", import.meta.url));
 writeFileSync(outPath, render(rows, inputArg.endsWith(".json") ? "a JSON coin list" : inputArg));

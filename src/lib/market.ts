@@ -1,6 +1,5 @@
 import { coinSeeds } from "@/data/coins";
 import { stockSeeds } from "@/data/stocks";
-import { tvSymbolsByTicker } from "@/data/tvSymbols";
 import { hashStr, mulberry32, type Rng } from "@/lib/random";
 
 export const HISTORY_CAP = 120;
@@ -128,7 +127,7 @@ export function seedMarket(): MarketState {
       change24hPct: number;
       vol24hUsd: number;
       image: string | null;
-      tvSymbol?: string;
+      tvSymbol?: string | null;
       hue: number;
       hue2: number;
     },
@@ -166,9 +165,7 @@ export function seedMarket(): MarketState {
   };
 
   const coins: LiveCoin[] = [
-    ...coinSeeds.map((s) =>
-      buildCoin(s, "meme", s.mcapUsd * earningsScale, tvSymbolsByTicker[s.ticker] ?? null),
-    ),
+    ...coinSeeds.map((s) => buildCoin(s, "meme", s.mcapUsd * earningsScale, s.tvSymbol ?? null)),
     ...stockSeeds.map((s) => buildCoin(s, "stock", 0, s.tvSymbol)),
   ];
 
