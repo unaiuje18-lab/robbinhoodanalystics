@@ -24,29 +24,8 @@ export function SiteHeader({
             className="w-full rounded-full border border-border bg-card py-2 pl-9 pr-4 text-sm outline-none placeholder:text-muted-foreground focus:border-brand-pink"
           />
         </div>
-        <nav className="hidden items-center gap-5 text-sm font-medium lg:flex">
-          <span className="flex items-center gap-1.5">
-            Game Mode
-            <span className="rounded-full bg-brand-pink px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
-              NEW
-            </span>
-          </span>
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            Hackathon
-            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold">
-              CLOSED
-            </span>
-          </span>
-        </nav>
         <div className="ml-auto flex items-center gap-3">
-          <span className="hidden text-sm font-medium sm:block">How it works</span>
           <ThemeToggle />
-          <button className="rounded-full bg-brand-pink px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
-            Launch
-          </button>
-          <button className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
-            Connect wallet
-          </button>
         </div>
       </div>
     </header>
