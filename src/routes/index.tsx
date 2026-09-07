@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { CoinCard } from "@/components/CoinCard";
 import { FilterBar } from "@/components/FilterBar";
+import { MarketTable } from "@/components/MarketTable";
 import { SiteHeader } from "@/components/SiteHeader";
 import { StatsSection } from "@/components/StatsSection";
 import { TickerBar } from "@/components/TickerBar";
@@ -78,11 +78,7 @@ function Index() {
           }}
         />
         {visible.length > 0 ? (
-          <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            {visible.map((coin) => (
-              <CoinCard key={coin.ticker} coin={coin} tickIndex={live.tickIndex} />
-            ))}
-          </section>
+          <MarketTable coins={visible} tickIndex={live.tickIndex} />
         ) : (
           <p className="py-16 text-center text-sm text-muted-foreground">
             No coins match your filters. Clear the search or uncheck Recent buys.

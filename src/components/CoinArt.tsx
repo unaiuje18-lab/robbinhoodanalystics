@@ -3,6 +3,7 @@ import { useState } from "react";
 /**
  * Small round coin marker used in lists and chips. Shows the coin's logo when
  * it has one (hiding itself if the URL breaks), otherwise the gradient dot.
+ * Pass a size via className (e.g. "h-8 w-8"); defaults to 24px.
  */
 export function Dot({
   hue,
@@ -17,7 +18,7 @@ export function Dot({
   const showLogo = image !== null && image !== undefined && !logoFailed;
   return (
     <span
-      className={`relative h-6 w-6 shrink-0 overflow-hidden rounded-full ${className ?? ""}`}
+      className={`relative shrink-0 overflow-hidden rounded-full ${className ?? "h-6 w-6"}`}
       style={{
         background: `linear-gradient(135deg, oklch(0.75 0.18 ${hue}), oklch(0.5 0.2 ${hue + 40}))`,
       }}
