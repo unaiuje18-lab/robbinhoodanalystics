@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { CoinAvatar, Dot } from "@/components/CoinArt";
 import { useMarket, useMarketSnapshot } from "@/hooks/useLiveMarket";
 import { formatCompactUsd, formatPct, formatUsd } from "@/lib/format";
@@ -37,24 +38,14 @@ export function StatsSection() {
   return (
     <section className="grid gap-3 lg:grid-cols-3">
       <div className="flex flex-col gap-3">
-        <div
-          className="relative overflow-hidden rounded-2xl border border-border p-5 shadow-card"
-          style={{
-            background: "linear-gradient(110deg, oklch(0.92 0.07 300), oklch(0.93 0.05 260))",
-          }}
-        >
+        <div className="hero-panel-earnings relative overflow-hidden rounded-2xl border border-border p-5 shadow-card">
           <p className="text-sm font-medium text-ink/70">Total creator earnings</p>
           <p className="mt-1 text-3xl font-extrabold tracking-tight text-ink">
             {formatUsd(earnings)}
           </p>
           <LatestTradeChip index={0} />
         </div>
-        <div
-          className="relative overflow-hidden rounded-2xl border border-border p-5 shadow-card"
-          style={{
-            background: "linear-gradient(110deg, oklch(0.93 0.05 220), oklch(0.95 0.04 180))",
-          }}
-        >
+        <div className="hero-panel-volume relative overflow-hidden rounded-2xl border border-border p-5 shadow-card">
           <p className="text-sm font-medium text-ink/70">24hr volume</p>
           <p className="mt-1 text-3xl font-extrabold tracking-tight text-ink">
             {formatCompactUsd(volume)}
@@ -67,7 +58,12 @@ export function StatsSection() {
         <h2 className="text-sm font-semibold">Top earning coins</h2>
         <div className="mt-4 grid grid-cols-4 gap-3">
           {topEarn.map((c) => (
-            <div key={c.ticker} className="text-center">
+            <Link
+              key={c.ticker}
+              to="/coin/$ticker"
+              params={{ ticker: c.ticker }}
+              className="rounded-xl text-center transition-transform hover:-translate-y-0.5"
+            >
               <CoinAvatar
                 ticker={c.ticker}
                 hue={c.hue}
@@ -75,9 +71,11 @@ export function StatsSection() {
                 image={c.image}
                 className="mx-auto aspect-square w-full rounded-xl"
               />
-              <p className="mt-2 truncate text-xs font-semibold">{c.ticker}</p>
+              <p className="mt-2 truncate text-xs font-semibold hover:text-brand-pink">
+                {c.ticker}
+              </p>
               <p className="text-xs text-muted-foreground">{formatCompactUsd(c.earningsUsd)}</p>
-            </div>
+            </Link>
           ))}
         </div>
       </div>
@@ -89,11 +87,13 @@ export function StatsSection() {
           <span className="text-right">Mcap</span>
           <span className="text-right">24h vol</span>
         </div>
-        <div className="mt-2 space-y-3">
+        <div className="mt-2 space-y-1">
           {topVol.map((c) => (
-            <div
+            <Link
               key={c.ticker}
-              className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 text-sm"
+              to="/coin/$ticker"
+              params={{ ticker: c.ticker }}
+              className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 rounded-lg px-1 py-1.5 text-sm transition-colors hover:bg-muted/60"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <Dot hue={c.hue} image={c.image} />
@@ -108,7 +108,7 @@ export function StatsSection() {
                 </span>
               </span>
               <span className="text-right font-medium">{formatCompactUsd(c.vol24hUsd)}</span>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

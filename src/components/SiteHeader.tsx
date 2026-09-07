@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function SiteHeader({
   query,
@@ -39,6 +40,7 @@ export function SiteHeader({
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <span className="hidden text-sm font-medium sm:block">How it works</span>
+          <ThemeToggle />
           <button className="rounded-full bg-brand-pink px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
             Launch
           </button>
