@@ -1,18 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { FilterBar } from "@/components/FilterBar";
-import { MarketTable } from "@/components/MarketTable";
+import { MarketTable, type SortKey, type SortSpec } from "@/components/MarketTable";
+import { MarketTabs, type MarketCategory } from "@/components/MarketTabs";
 import { SiteHeader } from "@/components/SiteHeader";
 import { StatsSection } from "@/components/StatsSection";
 import { TickerBar } from "@/components/TickerBar";
+import { useFavorites } from "@/hooks/useFavorites";
 import { useMarket, useMarketSnapshot } from "@/hooks/useLiveMarket";
-import {
-  filterCoins,
-  sortCoins,
-  type LiveCoin,
-  type MarketKind,
-  type MarketTab,
-} from "@/lib/market";
+import { filterCoins, type LiveCoin } from "@/lib/market";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -35,26 +30,48 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
+const SORT_FIELD: Record<SortKey, (coin: LiveCoin) => number> = {
+  price: (c) => c.priceUsd,
+  change: (c) => c.change24hPct,
+  volume: (c) => c.vol24hUsd,
+  mcap: (c) => c.mcapUsd,
+};
+
 function Index() {
   const live = useMarket();
   const { market: ranking, refresh } = useMarketSnapshot();
-  const [kind, setKind] = useState<MarketKind>("memes");
+  const { favorites, toggle: toggleFavorite } = useFavorites();
+  const [category, setCategory] = useState<MarketCategory>("memes");
+  const [sort, setSort] = useState<SortSpec>({ key: "mcap", dir: "desc" });
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<MarketTab>("trending");
   const [recentBuys, setRecentBuys] = useState(false);
 
-  // Order and filter membership come from the slow snapshot so cards hold
-  // their place while you scroll; prices and tick flashes stay live.
   const pool = ranking.coins.filter((c) =>
-    kind === "stocks" ? c.kind === "stock" : c.kind === "meme",
+    category === "favorites"
+      ? favorites.has(c.ticker)
+      : c.kind === (category === "stocks" ? "stock" : "meme"),
+  );
+
+  // Order comes from the slow snapshot (stable while scrolling); values stay live.
+  const ranker = SORT_FIELD[sort.key];
+  const ordered = [...filterCoins(pool, ranking.trades, { query, recentBuys })].sort((a, b) =>
+    sort.dir === "desc" ? ranker(b) - ranker(a) : ranker(a) - ranker(b),
   );
   const liveByTicker = new Map(live.coins.map((c) => [c.ticker, c] as const));
-  const visible = sortCoins(filterCoins(pool, ranking.trades, { query, recentBuys }), tab).flatMap(
-    (c) => {
-      const liveCoin = liveByTicker.get(c.ticker);
-      return liveCoin ? [liveCoin] : [];
-    },
-  );
+  const visible = ordered.flatMap((c) => {
+    const liveCoin = liveByTicker.get(c.ticker);
+    return liveCoin ? [liveCoin] : [];
+  });
+
+  const handleSort = (key: SortKey) =>
+    setSort((prev) =>
+      prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" },
+    );
+
+  const emptyHint =
+    category === "favorites"
+      ? "Nothing starred yet — tap the star on any row to pin it here."
+      : "No coins match your filters. Clear the search or uncheck Recent buys.";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -63,14 +80,13 @@ function Index() {
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
         <h1 className="sr-only">Flaunch — launch, trade and earn from meme coins</h1>
         <StatsSection />
-        <FilterBar
-          kind={kind}
-          onKindChange={(k) => {
-            setKind(k);
+        <MarketTabs
+          category={category}
+          onCategoryChange={(c) => {
+            setCategory(c);
             refresh();
           }}
-          tab={tab}
-          onTabChange={setTab}
+          favoritesCount={favorites.size}
           recentBuys={recentBuys}
           onRecentBuysChange={(v) => {
             setRecentBuys(v);
@@ -78,11 +94,16 @@ function Index() {
           }}
         />
         {visible.length > 0 ? (
-          <MarketTable coins={visible} tickIndex={live.tickIndex} />
+          <MarketTable
+            coins={visible}
+            tickIndex={live.tickIndex}
+            sort={sort}
+            onSort={handleSort}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+          />
         ) : (
-          <p className="py-16 text-center text-sm text-muted-foreground">
-            No coins match your filters. Clear the search or uncheck Recent buys.
-          </p>
+          <p className="py-16 text-center text-sm text-muted-foreground">{emptyHint}</p>
         )}
       </main>
       <footer className="border-t border-border">
