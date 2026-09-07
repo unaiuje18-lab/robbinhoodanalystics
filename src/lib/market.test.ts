@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HISTORY_CAP,
   TRADES_CAP,
+  applyQuotes,
   filterCoins,
   isRefreshDue,
   seedMarket,
@@ -193,6 +194,64 @@ describe("filterCoins", () => {
     const result = filterCoins(coins, trades, { query: "", recentBuys: true });
     expect(result.some((c) => c.ticker === first.ticker)).toBe(true);
     expect(result.some((c) => c.ticker === second.ticker)).toBe(false);
+  });
+});
+
+describe("applyQuotes", () => {
+  const base = seedMarket();
+  const coin = base.coins[0]!;
+
+  it("applies the real price, volume, cap and re-derives the 24h change", () => {
+    const next = applyQuotes(
+      base,
+      [
+        {
+          ticker: coin.ticker,
+          priceUsd: coin.priceUsd * 1.1,
+          change24hPct: 5,
+          vol24hUsd: 999,
+          mcapUsd: coin.mcapUsd * 1.1,
+        },
+      ],
+      12345,
+    );
+    const updated = next.coins.find((c) => c.ticker === coin.ticker)!;
+    expect(updated.priceUsd).toBeCloseTo(coin.priceUsd * 1.1, 12);
+    expect(updated.change24hPct).toBeCloseTo(5, 9);
+    expect(updated.vol24hUsd).toBe(999);
+    expect(updated.mcapUsd).toBeCloseTo(coin.mcapUsd * 1.1, 0);
+    expect(updated.history[updated.history.length - 1]).toBeCloseTo(updated.priceUsd, 12);
+    expect(next.quotesUpdatedAt).toBe(12345);
+  });
+
+  it("scales the last market cap when the quote carries none (Binance overlay)", () => {
+    const next = applyQuotes(
+      base,
+      [
+        {
+          ticker: coin.ticker,
+          priceUsd: coin.priceUsd * 2,
+          change24hPct: 100,
+          vol24hUsd: null,
+          mcapUsd: null,
+        },
+      ],
+      1,
+    );
+    const updated = next.coins.find((c) => c.ticker === coin.ticker)!;
+    expect(updated.mcapUsd).toBeCloseTo(coin.mcapUsd * 2, 0);
+    expect(updated.vol24hUsd).toBe(coin.vol24hUsd);
+  });
+
+  it("ignores unknown tickers and never mutates the input", () => {
+    const snapshot = structuredClone(base);
+    const next = applyQuotes(
+      base,
+      [{ ticker: "NOTACOIN", priceUsd: 1, change24hPct: 1, vol24hUsd: 1, mcapUsd: 1 }],
+      1,
+    );
+    expect(base).toEqual(snapshot);
+    expect(next.coins).toEqual(snapshot.coins);
   });
 });
 

@@ -16,20 +16,11 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { universe } from "./stock-universe";
 import { hashStr } from "../src/lib/random";
+import { SCREENER_EXCHANGES, fetchScreenerRows, parseStockRow } from "../src/lib/nasdaq";
 import { mapPool, resolveTvSymbol } from "./tv-search";
 
 const TOP_N = 500;
 const TV_CONCURRENCY = 8;
-const EXCHANGES = ["nasdaq", "nyse", "amex"];
-
-type ScreenerRow = {
-  symbol?: string;
-  name?: string;
-  lastsale?: string;
-  pctchange?: string;
-  volume?: string;
-  marketCap?: string;
-};
 
 type Row = {
   ticker: string;
@@ -49,38 +40,13 @@ function parseNum(s: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function fetchExchangeRows(exchange: string): Promise<ScreenerRow[]> {
-  const url =
-    `https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&download=true` +
-    `&exchange=${exchange}`;
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) {
-    console.error(`${exchange}: HTTP ${res.status} — skipped.`);
-    return [];
-  }
-  const json = (await res.json()) as { data?: { rows?: ScreenerRow[] } };
-  return json.data?.rows ?? [];
-}
-
-const screeners = await Promise.all(EXCHANGES.map(fetchExchangeRows));
+const screeners = await Promise.all(
+  SCREENER_EXCHANGES.map((exchange) => fetchScreenerRows(exchange).catch(() => [])),
+);
 const rows = screeners
   .flat()
-  .map((r) => ({
-    // The screener writes class shares as "BRK/A"; normalize to "BRK.A",
-    // which is also the TradingView convention.
-    ticker: (r.symbol ?? "").trim().toUpperCase().replace("/", "."),
-    name: (r.name ?? "").trim(),
-    priceUsd: parseNum(r.lastsale),
-    mcapUsd: Math.round(parseNum(r.marketCap)),
-    change24hPct: Math.round(parseNum(r.pctchange) * 100) / 100,
-    vol24hUsd: Math.round(parseNum(r.volume) * parseNum(r.lastsale)),
-  }))
-  .filter((r) => r.ticker.length > 0 && r.name.length > 0 && r.priceUsd > 0 && r.mcapUsd > 0)
+  .map(parseStockRow)
+  .filter((r): r is NonNullable<typeof r> => r !== null)
   .sort((a, b) => b.mcapUsd - a.mcapUsd)
   .slice(0, TOP_N);
 

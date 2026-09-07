@@ -10,13 +10,7 @@ export const CREATOR_FEE_RATE = 0.01;
 const TOTAL_EARNINGS_TARGET = 2_712_958;
 const TRADE_PROBABILITY = 0.65;
 const SECOND_TRADE_PROBABILITY = 0.25;
-const JUMP_PROBABILITY = 0.02;
 const BUY_PROBABILITY = 0.62;
-/** A trade moves price proportionally to amount/mcap; scaled and capped. */
-const TRADE_IMPACT_SCALE = 40;
-const TRADE_IMPACT_CAP = 5;
-/** Per-tick volume decay keeps 24h volume bounded in a forever-running sim. */
-const VOLUME_DECAY = 0.9985;
 
 export type LiveCoin = {
   ticker: string;
@@ -62,6 +56,8 @@ export type MarketState = {
   coins: LiveCoin[];
   /** Newest first, capped at TRADES_CAP. */
   trades: TradeEvent[];
+  /** Client clock of the last real-quote application; null before the first poll. */
+  quotesUpdatedAt: number | null;
 };
 
 export type MarketTab = "trending" | "top" | "gainers" | "losers";
@@ -184,7 +180,7 @@ export function seedMarket(): MarketState {
     });
   }
 
-  return { tickIndex: 0, rngState: rng.state(), coins, trades };
+  return { tickIndex: 0, rngState: rng.state(), coins, trades, quotesUpdatedAt: null };
 }
 
 function makeTradeSpec(
@@ -198,15 +194,10 @@ function makeTradeSpec(
   };
 }
 
-function impactPctOf(amountUsd: number, mcapUsd: number, action: TradeAction): number {
-  if (mcapUsd <= 0) return 0;
-  const capped = Math.min((amountUsd / mcapUsd) * TRADE_IMPACT_SCALE, TRADE_IMPACT_CAP);
-  return action === "Buy" ? capped : -capped;
-}
-
 /**
  * Advance the market one tick. Pure: same input state → same output state.
- * Trade decisions are drawn first so their price impact folds into this tick.
+ * Prices, volume and market caps are owned by real quotes (see applyQuotes) —
+ * this tick only records the fictional meme tape and the creator fees it earns.
  */
 export function stepMarket(prev: MarketState): MarketState {
   const rng = mulberry32(prev.rngState);
@@ -218,53 +209,14 @@ export function stepMarket(prev: MarketState): MarketState {
     if (rng.next() < SECOND_TRADE_PROBABILITY) specs.push(makeTradeSpec(rng, memeIndices));
   }
 
-  const impactByIndex = new Map<number, number>();
-  for (const spec of specs) {
-    const coin = prev.coins[spec.coinIndex];
-    if (!coin) continue;
-    impactByIndex.set(
-      spec.coinIndex,
-      (impactByIndex.get(spec.coinIndex) ?? 0) +
-        impactPctOf(spec.amountUsd, coin.mcapUsd, spec.action),
-    );
-  }
-
   const coins = prev.coins.map((coin, i) => {
-    let deltaPct = gauss(rng) * volFor(coin.kind, coin.ticker) * 100;
-    if (rng.next() < JUMP_PROBABILITY) {
-      deltaPct += (rng.next() < 0.5 ? -1 : 1) * (1 + rng.next() * 5);
-    }
-    const impact = impactByIndex.get(i);
-    if (impact !== undefined) deltaPct += impact;
-
-    const priceUsd = Math.max(coin.priceUsd * (1 + deltaPct / 100), 1e-12);
-    const mcapUsd = Math.max(coin.mcapUsd * (1 + deltaPct / 100), 0);
-    const history = [...coin.history.slice(-(HISTORY_CAP - 1)), priceUsd];
-
-    return withDerivedChange({
+    const spec = specs.find((s) => s.coinIndex === i);
+    if (!spec) return coin;
+    return {
       ...coin,
-      priceUsd,
-      mcapUsd,
-      history,
-      lastDeltaPct: deltaPct,
-    });
+      earningsUsd: coin.earningsUsd + spec.amountUsd * CREATOR_FEE_RATE,
+    };
   });
-
-  // Fold trade effects (volume, creator fees) into the coins that were traded.
-  for (const spec of specs) {
-    const coin = coins[spec.coinIndex];
-    if (!coin) continue;
-    coin.vol24hUsd = coin.vol24hUsd * VOLUME_DECAY + spec.amountUsd;
-    coin.earningsUsd += spec.amountUsd * CREATOR_FEE_RATE;
-  }
-  // Untraded coins still decay volume so it stays bounded.
-  const traded = new Set(specs.map((s) => s.coinIndex));
-  for (let i = 0; i < coins.length; i++) {
-    if (!traded.has(i)) {
-      const coin = coins[i];
-      if (coin) coin.vol24hUsd = coin.vol24hUsd * VOLUME_DECAY;
-    }
-  }
 
   const trades: TradeEvent[] = [
     ...specs.map((spec, j) => {
@@ -285,7 +237,65 @@ export function stepMarket(prev: MarketState): MarketState {
     rngState: rng.state(),
     coins,
     trades,
+    quotesUpdatedAt: prev.quotesUpdatedAt,
   };
+}
+
+export type Quote = {
+  ticker: string;
+  priceUsd: number | null;
+  change24hPct: number | null;
+  vol24hUsd: number | null;
+  mcapUsd: number | null;
+};
+
+/**
+ * Fold real provider quotes into the market. Price, 24h change, volume and
+ * market cap become the provider's word; the seeded history grows one point
+ * per real price move and lastDeltaPct drives the green/red flashes. Quotes
+ * without a market cap (the Binance overlay) scale the last known cap by the
+ * price ratio.
+ */
+export function applyQuotes(
+  state: MarketState,
+  quotes: Quote[],
+  now: number = Date.now(),
+): MarketState {
+  if (quotes.length === 0) return state;
+  const byTicker = new Map(quotes.map((q) => [q.ticker.toUpperCase(), q] as const));
+
+  const coins = state.coins.map((coin) => {
+    const quote = byTicker.get(coin.ticker);
+    if (!quote) return coin;
+
+    const prevPrice = coin.priceUsd;
+    const priceUsd = quote.priceUsd !== null && quote.priceUsd > 0 ? quote.priceUsd : prevPrice;
+    const ratio = prevPrice > 0 ? priceUsd / prevPrice : 1;
+    const mcapUsd =
+      quote.mcapUsd !== null && quote.mcapUsd > 0
+        ? quote.mcapUsd
+        : Math.max(coin.mcapUsd * ratio, 0);
+    const vol24hUsd =
+      quote.vol24hUsd !== null && quote.vol24hUsd > 0 ? quote.vol24hUsd : coin.vol24hUsd;
+    // Anchor the 24h open on the provider's change so the derived % matches it.
+    const open24hUsd =
+      quote.change24hPct !== null ? priceUsd / (1 + quote.change24hPct / 100) : coin.open24hUsd;
+    const history =
+      priceUsd !== prevPrice ? [...coin.history.slice(-(HISTORY_CAP - 1)), priceUsd] : coin.history;
+    const lastDeltaPct = prevPrice > 0 ? (priceUsd / prevPrice - 1) * 100 : 0;
+
+    return withDerivedChange({
+      ...coin,
+      priceUsd,
+      open24hUsd,
+      mcapUsd,
+      vol24hUsd,
+      history,
+      lastDeltaPct,
+    });
+  });
+
+  return { ...state, coins, quotesUpdatedAt: now };
 }
 
 export function totalCreatorEarnings(coins: LiveCoin[]): number {

@@ -87,6 +87,7 @@ function Index() {
             refresh();
           }}
           favoritesCount={favorites.size}
+          quotesUpdatedAt={live.quotesUpdatedAt}
           recentBuys={recentBuys}
           onRecentBuysChange={(v) => {
             setRecentBuys(v);
