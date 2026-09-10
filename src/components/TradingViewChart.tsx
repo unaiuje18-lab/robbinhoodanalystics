@@ -7,7 +7,14 @@ import { useEffect, useRef, useState } from "react";
  * ships inside the widget per their embed terms. Follows the site's
  * light/dark theme.
  */
-export function TradingViewChart({ tvSymbol }: { tvSymbol: string }) {
+export function TradingViewChart({
+  tvSymbol,
+  className,
+}: {
+  tvSymbol: string;
+  /** Overrides the default 420px height (e.g. taller chart on detail pages). */
+  className?: string;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
@@ -59,7 +66,9 @@ export function TradingViewChart({ tvSymbol }: { tvSymbol: string }) {
   }, [tvSymbol, theme]);
 
   return (
-    <div className="h-[420px] overflow-hidden rounded-xl border border-border bg-card">
+    <div
+      className={`overflow-hidden rounded-xl border border-border bg-card ${className ?? "h-[420px]"}`}
+    >
       <div ref={containerRef} className="tradingview-widget-container h-full w-full" />
     </div>
   );

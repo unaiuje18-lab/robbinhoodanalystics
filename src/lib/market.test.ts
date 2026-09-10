@@ -12,6 +12,7 @@ import {
   topByVolume,
   total24hVolume,
   totalCreatorEarnings,
+  totalMcap,
   trendingScore,
 } from "./market";
 
@@ -293,5 +294,15 @@ describe("selectors", () => {
     }
 
     expect(total24hVolume(coins)).toBeGreaterThan(0);
+  });
+
+  it("totalMcap is the plain sum of market caps", () => {
+    const coins = seedMarket().coins;
+    const expected = coins.reduce((sum, c) => sum + c.mcapUsd, 0);
+    expect(totalMcap(coins)).toBeCloseTo(expected, 6);
+    // Splitting the universe must add back up to the whole.
+    const memes = totalMcap(coins.filter((c) => c.kind === "meme"));
+    const stocks = totalMcap(coins.filter((c) => c.kind === "stock"));
+    expect(memes + stocks).toBeCloseTo(expected, 6);
   });
 });

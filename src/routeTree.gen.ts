@@ -10,11 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CoinTickerRouteImport } from './routes/coin.$ticker'
+import { Route as MarketKindRouteImport } from './routes/market.$kind'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CoinTickerRoute = CoinTickerRouteImport.update({
@@ -22,31 +29,44 @@ const CoinTickerRoute = CoinTickerRouteImport.update({
   path: '/coin/$ticker',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MarketKindRoute = MarketKindRouteImport.update({
+  id: '/market/$kind',
+  path: '/market/$kind',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/coin/$ticker': typeof CoinTickerRoute
+  '/market/$kind': typeof MarketKindRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/coin/$ticker': typeof CoinTickerRoute
+  '/market/$kind': typeof MarketKindRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/coin/$ticker': typeof CoinTickerRoute
+  '/market/$kind': typeof MarketKindRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/coin/$ticker'
+  fullPaths: '/' | '/admin' | '/coin/$ticker' | '/market/$kind'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/coin/$ticker'
-  id: '__root__' | '/' | '/coin/$ticker'
+  to: '/' | '/admin' | '/coin/$ticker' | '/market/$kind'
+  id: '__root__' | '/' | '/admin' | '/coin/$ticker' | '/market/$kind'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   CoinTickerRoute: typeof CoinTickerRoute
+  MarketKindRoute: typeof MarketKindRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +78,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/coin/$ticker': {
       id: '/coin/$ticker'
       path: '/coin/$ticker'
@@ -65,12 +92,21 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoinTickerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/market/$kind': {
+      id: '/market/$kind'
+      path: '/market/$kind'
+      fullPath: '/market/$kind'
+      preLoaderRoute: typeof MarketKindRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   CoinTickerRoute: CoinTickerRoute,
+  MarketKindRoute: MarketKindRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

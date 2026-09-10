@@ -1,9 +1,21 @@
-import { Star } from "lucide-react";
+import { Crown, Flame, Star, ThumbsUp } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export type MarketCategory = "favorites" | "memes" | "stocks";
+export type MarketCategory = "board" | "topvoted" | "topvolume" | "favorites" | "memes" | "stocks";
+
+/** Sub-filter for the curated tabs — both markets together, or one only. */
+export type KindFilter = "all" | "meme" | "stock";
+
+const KIND_OPTIONS: { value: KindFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "meme", label: "Meme coins" },
+  { value: "stock", label: "Stocks" },
+];
 
 const CATEGORIES: { value: MarketCategory; label: string; icon?: typeof Star }[] = [
+  { value: "board", label: "The Board", icon: Crown },
+  { value: "topvoted", label: "Top Voted", icon: ThumbsUp },
+  { value: "topvolume", label: "Top Volume", icon: Flame },
   { value: "favorites", label: "Favorites", icon: Star },
   { value: "memes", label: "Meme coins" },
   { value: "stocks", label: "Stocks" },
@@ -11,7 +23,9 @@ const CATEGORIES: { value: MarketCategory; label: string; icon?: typeof Star }[]
 
 /**
  * Binance-style category tabs: bold active label with a pink underline.
- * Sorting lives in the table headers, not here.
+ * Sorting lives in the table headers, not here. The first three tabs are
+ * BlackRug's curated lists — The Board (curator picks), Top Voted (24h votes)
+ * and Top Volume (24h volume, which auto-creates technical specifications).
  */
 /** "Live · updated Xs ago" — re-renders once a second. */
 function LiveBadge({ updatedAt }: { updatedAt: number | null }) {
@@ -40,6 +54,8 @@ export function MarketTabs({
   recentBuys,
   onRecentBuysChange,
   quotesUpdatedAt,
+  kindFilter,
+  onKindFilterChange,
 }: {
   category: MarketCategory;
   onCategoryChange: (category: MarketCategory) => void;
@@ -47,7 +63,10 @@ export function MarketTabs({
   recentBuys: boolean;
   onRecentBuysChange: (v: boolean) => void;
   quotesUpdatedAt: number | null;
+  kindFilter: KindFilter;
+  onKindFilterChange: (kind: KindFilter) => void;
 }) {
+  const curated = category === "board" || category === "topvoted" || category === "topvolume";
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-6 border-b border-border">
       <div className="flex items-center gap-6">
@@ -79,15 +98,39 @@ export function MarketTabs({
       </div>
       <div className="flex items-center gap-4">
         <LiveBadge updatedAt={quotesUpdatedAt} />
-        <label className="flex cursor-pointer items-center gap-2 pb-2.5 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={recentBuys}
-            onChange={(e) => onRecentBuysChange(e.target.checked)}
-            className="h-4 w-4 rounded border-border"
-          />
-          Recent buys
-        </label>
+        {curated ? (
+          <div
+            role="group"
+            aria-label="Filter by market"
+            className="flex rounded-full border border-border bg-card p-0.5 text-xs font-semibold"
+          >
+            {KIND_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={kindFilter === option.value}
+                onClick={() => onKindFilterChange(option.value)}
+                className={`rounded-full px-3 py-1 transition-colors ${
+                  kindFilter === option.value
+                    ? "bg-brand-pink text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <label className="flex cursor-pointer items-center gap-2 pb-2.5 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={recentBuys}
+              onChange={(e) => onRecentBuysChange(e.target.checked)}
+              className="h-4 w-4 rounded border-border"
+            />
+            Recent buys
+          </label>
+        )}
       </div>
     </div>
   );

@@ -1,10 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, ChevronUp, Star } from "lucide-react";
 import { Dot } from "@/components/CoinArt";
-import { formatCompactUsd, formatPct, formatUsd } from "@/lib/format";
+import { FlashingPrice } from "@/components/FlashingPrice";
+import { formatCompactUsd, formatPct } from "@/lib/format";
 import type { LiveCoin } from "@/lib/market";
 
-export type SortKey = "price" | "change" | "volume" | "mcap";
+export type SortKey = "price" | "change" | "volume" | "mcap" | "votes";
 export type SortSpec = { key: SortKey; dir: "asc" | "desc" };
 
 const COLUMNS: { key: SortKey | null; label: string }[] = [
@@ -22,20 +23,30 @@ const COLUMNS: { key: SortKey | null; label: string }[] = [
  */
 export function MarketTable({
   coins,
-  tickIndex,
   sort,
   onSort,
   favorites,
   onToggleFavorite,
+  votes,
+  newSpecs,
+  ranks,
 }: {
   coins: LiveCoin[];
-  tickIndex: number;
   sort: SortSpec;
   onSort: (key: SortKey) => void;
   favorites: Set<string>;
   onToggleFavorite: (ticker: string) => void;
+  /** 24h vote counts per ticker — renders the sortable Votes column when provided. */
+  votes?: Record<string, number> | undefined;
+  /** Tickers whose technical spec was created in the last 24h. */
+  newSpecs?: Set<string> | undefined;
+  /** Position per ticker (curated lists show 1..n next to the name). */
+  ranks?: Map<string, number> | undefined;
 }) {
   const navigate = useNavigate();
+  const columns: { key: SortKey | null; label: string }[] = votes
+    ? [...COLUMNS, { key: "votes", label: "Votes (24h)" }]
+    : COLUMNS;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
@@ -44,7 +55,7 @@ export function MarketTable({
           <thead>
             <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
               <th scope="col" className="w-9 px-2 py-3" aria-label="Favorite" />
-              {COLUMNS.map((col) => {
+              {columns.map((col) => {
                 const active = col.key !== null && sort.key === col.key;
                 return (
                   <th
@@ -117,15 +128,25 @@ export function MarketTable({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
+                      {ranks ? (
+                        <span className="w-5 shrink-0 text-right text-xs font-bold tabular-nums text-muted-foreground">
+                          {ranks.get(coin.ticker)}
+                        </span>
+                      ) : null}
                       <Dot hue={coin.hue} image={coin.image} className="h-8 w-8" />
                       <div className="min-w-0">
                         <Link
                           to="/coin/$ticker"
                           params={{ ticker: coin.ticker }}
                           onClick={(e) => e.stopPropagation()}
-                          className="block truncate font-semibold hover:text-brand-pink"
+                          className="flex items-center gap-1.5 truncate font-semibold hover:text-brand-pink"
                         >
                           {coin.ticker}
+                          {newSpecs?.has(coin.ticker) ? (
+                            <span className="rounded-full bg-brand-pink/15 px-1.5 text-[10px] font-bold text-brand-pink">
+                              NEW
+                            </span>
+                          ) : null}
                         </Link>
                         <p className="max-w-[220px] truncate text-xs text-muted-foreground">
                           {coin.name}
@@ -134,18 +155,7 @@ export function MarketTable({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                    <span
-                      key={tickIndex}
-                      className={`-mx-1 rounded px-1 ${
-                        coin.lastDeltaPct > 0.02
-                          ? "flash-up"
-                          : coin.lastDeltaPct < -0.02
-                            ? "flash-down"
-                            : ""
-                      }`}
-                    >
-                      {formatUsd(coin.priceUsd)}
-                    </span>
+                    <FlashingPrice price={coin.priceUsd} />
                   </td>
                   <td
                     className={`px-4 py-3 text-right font-medium tabular-nums ${
@@ -160,6 +170,11 @@ export function MarketTable({
                   <td className="px-4 py-3 text-right tabular-nums">
                     {formatCompactUsd(coin.mcapUsd)}
                   </td>
+                  {votes ? (
+                    <td className="px-4 py-3 text-right font-semibold tabular-nums">
+                      {votes[coin.ticker] ?? 0}
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}

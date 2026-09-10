@@ -306,6 +306,10 @@ export function total24hVolume(coins: LiveCoin[]): number {
   return coins.reduce((sum, c) => sum + c.vol24hUsd, 0);
 }
 
+export function totalMcap(coins: LiveCoin[]): number {
+  return coins.reduce((sum, c) => sum + c.mcapUsd, 0);
+}
+
 export function topByEarnings(coins: LiveCoin[], count: number): LiveCoin[] {
   return [...coins].sort((a, b) => b.earningsUsd - a.earningsUsd).slice(0, count);
 }
