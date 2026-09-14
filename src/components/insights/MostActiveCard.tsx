@@ -88,7 +88,10 @@ export function MostActiveCard() {
   }, [blackrug, market]);
 
   return (
-    <InsightCard title="Most Active" action={<HeaderActions mode={mode} onModeChange={setMode} />}>
+    <InsightCard
+      title={mode === "active" ? "Most Active" : "Recently Added"}
+      action={<HeaderActions mode={mode} onModeChange={setMode} />}
+    >
       {mode === "active" ? (
         <ol className="flex flex-col">
           {rows.map((coin, i) => {
