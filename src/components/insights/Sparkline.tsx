@@ -29,13 +29,13 @@ export function Sparkline({
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
       aria-hidden="true"
-      className={className ?? "h-7 w-24 shrink-0"}
+      className={className ?? "h-6 w-[72px] shrink-0"}
     >
       <polyline
         points={points}
         fill="none"
         stroke={up ? "var(--success)" : "var(--danger)"}
-        strokeWidth="2"
+        strokeWidth="1.5"
         vectorEffect="non-scaling-stroke"
         strokeLinejoin="round"
         strokeLinecap="round"

@@ -26,10 +26,10 @@ export function RangeToggle({
           type="button"
           aria-pressed={value === r.key}
           onClick={() => onChange(r.key)}
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+          className={`rounded-full px-3 py-1 text-[13px] font-semibold transition-colors ${
             value === r.key
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "border border-border bg-card text-foreground shadow-sm"
+              : "border border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
           {r.label}
