@@ -10,6 +10,7 @@ import { TickerBar } from "@/components/TickerBar";
 import { useBlackrug } from "@/hooks/useBlackrug";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useMarket, useMarketSnapshot } from "@/hooks/useLiveMarket";
+import { InsightsRow } from "@/components/insights/InsightsRow";
 import { TOP_LIST_SIZE, VOTE_WINDOW_MS } from "@/lib/blackrug";
 import { ensureSpecsFn } from "@/lib/blackrugServer";
 import { filterCoins, topByVolume, type LiveCoin } from "@/lib/market";
@@ -212,6 +213,7 @@ function Index() {
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
         <h1 className="sr-only">BlackRug — meme coin analytics, The Board and community votes</h1>
         <StatsSection />
+        <InsightsRow />
         <MarketTabs
           category={category}
           onCategoryChange={(c) => {
