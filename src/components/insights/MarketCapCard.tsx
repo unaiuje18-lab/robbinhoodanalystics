@@ -1,5 +1,5 @@
 import { ChartCandlestick, ChartLine } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Area,
   Bar,
@@ -20,6 +20,7 @@ import {
   edgeTickValues,
   edgeTimeFormatter,
 } from "@/components/insights/InsightCard";
+import { ChartModal, ExpandButton } from "@/components/insights/ChartModal";
 import { RangeToggle } from "@/components/insights/RangeToggle";
 import { formatCompactUsd, formatPct } from "@/lib/format";
 import type { ChartRange } from "@/lib/klines";
@@ -94,6 +95,10 @@ function ChartTypeToggle({
 export function MarketCapCard() {
   const [range, setRange] = useState<ChartRange>("24h");
   const [chartType, setChartType] = useState<"area" | "line">("area");
+  const [expanded, setExpanded] = useState(false);
+  // The card and its expanded modal both mount a chart — gradient ids must
+  // be unique per instance or the second copy resolves to the first's defs.
+  const gradId = useId();
   const { series, mcapUsd, volUsd, mcapChangePct, volChangePct, isLoading, isError, refetch } =
     useMarketCapIndex(range);
 
@@ -122,17 +127,15 @@ export function MarketCapCard() {
   }, [series]);
 
   const chartReady = !isLoading && !isError && series.length > 0;
+  const controls = (
+    <div className="flex items-center gap-2">
+      <ChartTypeToggle value={chartType} onChange={setChartType} />
+      <RangeToggle value={range} onChange={setRange} />
+    </div>
+  );
 
-  return (
-    <InsightCard
-      title="Market Cap"
-      action={
-        <div className="flex items-center gap-2">
-          <ChartTypeToggle value={chartType} onChange={setChartType} />
-          <RangeToggle value={range} onChange={setRange} />
-        </div>
-      }
-    >
+  const stats = (
+    <>
       <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="text-2xl font-black tabular-nums">
           {mcapUsd === null ? "—" : formatCompactUsd(mcapUsd)}
@@ -151,15 +154,21 @@ export function MarketCapCard() {
           <span className="h-2 w-2 rounded-full bg-muted-foreground/40" /> Volume
         </span>
       </div>
+    </>
+  );
+
+  // Same chart at either size — the card's 180px view and the expanded modal.
+  const renderChart = (height: number) => (
+    <>
       <ChartState
         isLoading={isLoading}
         isError={isError && !chartReady}
         onRetry={refetch}
-        height={180}
+        height={height}
       />
       {chartReady ? (
         <div className="relative">
-          <ResponsiveContainer width="100%" height={180}>
+          <ResponsiveContainer width="100%" height={height}>
             <ComposedChart
               data={series}
               margin={{ top: 6, right: 2, bottom: 0, left: 2 }}
@@ -167,13 +176,13 @@ export function MarketCapCard() {
             >
               <defs>
                 {/* Hard stop at the range open: green above, red below. */}
-                <linearGradient id="mcap-fill" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={`${gradId}-fill`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset={0} stopColor="var(--success)" stopOpacity={0.3} />
                   <stop offset={baselineFrac} stopColor="var(--success)" stopOpacity={0.3} />
                   <stop offset={baselineFrac} stopColor="var(--danger)" stopOpacity={0.3} />
                   <stop offset={1} stopColor="var(--danger)" stopOpacity={0.3} />
                 </linearGradient>
-                <linearGradient id="mcap-stroke" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={`${gradId}-stroke`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset={0} stopColor="var(--success)" stopOpacity={0.95} />
                   <stop offset={baselineFrac} stopColor="var(--success)" stopOpacity={0.95} />
                   <stop offset={baselineFrac} stopColor="var(--danger)" stopOpacity={0.95} />
@@ -217,9 +226,9 @@ export function MarketCapCard() {
                   yAxisId="mcap"
                   type="linear"
                   dataKey="mcap"
-                  stroke="url(#mcap-stroke)"
+                  stroke={`url(#${gradId}-stroke)`}
                   strokeWidth={1.5}
-                  fill="url(#mcap-fill)"
+                  fill={`url(#${gradId}-fill)`}
                   activeDot={{ r: 3 }}
                 />
               ) : (
@@ -227,7 +236,7 @@ export function MarketCapCard() {
                   yAxisId="mcap"
                   type="linear"
                   dataKey="mcap"
-                  stroke="url(#mcap-stroke)"
+                  stroke={`url(#${gradId}-stroke)`}
                   strokeWidth={1.8}
                   dot={false}
                   activeDot={{ r: 3 }}
@@ -245,10 +254,36 @@ export function MarketCapCard() {
           <Watermark />
         </div>
       ) : !isLoading && !isError ? (
-        <p className="flex h-[180px] items-center justify-center text-xs text-muted-foreground">
+        <p
+          className="flex items-center justify-center text-xs text-muted-foreground"
+          style={{ height }}
+        >
           No data for this range yet.
         </p>
       ) : null}
-    </InsightCard>
+    </>
+  );
+
+  return (
+    <>
+      <InsightCard
+        title="Market Cap"
+        action={
+          <div className="flex items-center gap-2">
+            {controls}
+            <ExpandButton onClick={() => setExpanded(true)} />
+          </div>
+        }
+      >
+        {stats}
+        {renderChart(180)}
+      </InsightCard>
+      {expanded ? (
+        <ChartModal title="Market Cap" controls={controls} onClose={() => setExpanded(false)}>
+          {stats}
+          {renderChart(460)}
+        </ChartModal>
+      ) : null}
+    </>
   );
 }
